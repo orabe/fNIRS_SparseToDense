@@ -11,3 +11,10 @@ __pycache__/
 *.svg
 *.log
 *.out
+*.json
+*.csv
+*.tsv
+*.h5
+*.snirf
+*.npy
+*.tm
