@@ -1,0 +1,13 @@
+*.pkl
+*.sif
+*.ipynb_checkpoints
+__pycache__/
+.DS_Store
+.vscode/
+*.gif
+*.png
+*.jpg
+*.jpeg
+*.svg
+*.log
+*.out
