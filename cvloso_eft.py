@@ -1,25 +1,12 @@
-import torch
-import glob
 import pickle
 import numpy as np
 from sklearn.metrics import f1_score
-import matplotlib.pyplot as plt
-plt.style.use('ggplot')
-from pathlib import PureWindowsPath
-from torch import nn
-import torch.nn as nn
 import torch
 import os
-from torch import optim
-import os
+from torch import nn, optim
 from datetime import datetime
 
 from models import CNN2D_BaselineV2, CNN2DModel, Dataset, PreloadedDataset
-
-torch.cuda.is_available()
-
-# !pip install xarray
-import xarray as xr
 
 
 def build_model(model_spec):
@@ -110,34 +97,57 @@ def main():
         },
     }
 
-    freqs = [0.2, 0.5, 0.7]
+    # train_runs = {'run-1', 'run-2'}
+    # val_runs = {'run-3'}
+
+    # train_freqs = {0.2, 0.5, 0.7}
+    # val_freqs = {0.5}
+    # test_freq = 0.5
+    
+    # train_freqs = {0.2, 0.5, 0.7}
+    # val_freqs = {0.2, 0.5, 0.7}
+    # test_freq = 0.5
+    
+    # train_freqs = {0.5}
+    # val_freqs = {0.5}
+    # test_freq = 0.5
+
+    # train_runs = {'run-1', 'run-2', 'run-3'}
+    # val_runs = {'run-3'}
+    # train_freqs = {0.5}
+    # val_freqs = {0.5}
+    # test_freq = 0.5
+    
+    train_runs = {'run-2', 'run-3'}
+    val_runs = {'run-1'}
+    train_freqs = {0.2, 0.5, 0.7}
+    val_freqs = {0.5}
+    test_freq = 0.5
+
+    
     lr = 1e-4
     batch_size = 32
-    use_preloaded_dataset = True
+    use_preloaded_dataset = False
     
     dataset_name = "BallSqueezingHD_modified"
     # dataset_name = "FreshMotor"
     selected_model_key = 'baseline'
 
-    if selected_model_key not in model_variants:
-        raise ValueError(f"Unknown model key '{selected_model_key}'. Available: {list(model_variants)}")
-
     model_spec = model_variants[selected_model_key]
-    
-    # tag to e-notation without padded zeros (e.g., 0.001 -> 1e-3)
     base, exp = f"{lr:.0e}".split("e")
     lr_tag = f"lr{base}e{int(exp)}"
-    
     model_name = f"{model_spec['label']}_{lr_tag}"
+    run_tag = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_name = f"{model_name}__{run_tag}"
 
-    training_root = os.path.join("training", dataset_name)
-    models_dir = os.path.join(training_root, model_name, 'models')
-    loss_dir = os.path.join(training_root, model_name, 'loss')
-    log_dir = os.path.join(training_root, model_name, 'logs')
+    training_root = os.path.join("training", dataset_name, run_name)
+    models_dir = os.path.join(training_root, 'models')
+    loss_dir = os.path.join(training_root, 'loss')
+    log_dir = os.path.join(training_root, 'logs')
     os.makedirs(models_dir, exist_ok=True)
     os.makedirs(loss_dir, exist_ok=True)
     os.makedirs(log_dir, exist_ok=True)
-    split_log_path = os.path.join(log_dir, f"split_usage_{model_name}.log")
+    split_log_path = os.path.join(log_dir, f"split_usage_{run_name}.log")
 
     append_log(
         split_log_path,
@@ -145,8 +155,13 @@ def main():
             "",
             f"=== Run started {datetime.now().isoformat()} ===",
             f"Model: {model_name}",
+            f"Run tag: {run_tag}",
             f"Dataset: {dataset_name}",
-            f"Frequencies: {', '.join(str(f) for f in freqs)}",
+            f"Train runs: {sorted(train_runs)}",
+            f"Validation runs: {sorted(val_runs)}",
+            f"Train freqs: {sorted(train_freqs)}",
+            f"Validation freqs: {sorted(val_freqs)}",
+            f"Test freq: {test_freq}",
         ],
     )
 
@@ -162,81 +177,57 @@ def main():
         dataset_name,
         "files_to_sessions.pkl",
     )
-    
-    meta_events = []
-    for freq in freqs:
+
+    freqs_to_load = sorted(set(train_freqs) | set(val_freqs) | {test_freq})
+    train_freq_tags = {f"frq{f}" for f in train_freqs}
+    val_freq_tags = {f"frq{f}" for f in val_freqs}
+
+    meta_events_by_freq = {}
+    for freq in freqs_to_load:
         with open(events.format(freq, freq), 'rb') as handle:
-            meta = pickle.load(handle)
-        meta_events.append(meta)
+            meta_events_by_freq[freq] = pickle.load(handle)
 
     # train-data
-    for REMOVE_SUB in meta_events[0].keys(): #iterate over the subjects in a LOSO evaluation. 
-        train_data = []
-        for meta_dict in meta_events:
+    subjects = list(meta_events_by_freq[freqs_to_load[0]].keys())
+    for REMOVE_SUB in subjects: #iterate over the subjects in a LOSO evaluation. 
+        candidate_segments = []
+        for freq in freqs_to_load:
+            meta_dict = meta_events_by_freq[freq]
             for sub in meta_dict:
                 if sub != REMOVE_SUB and sub in meta_dict:
-                    train_data += meta_dict[sub]
+                    candidate_segments += meta_dict[sub]
         
         # generate the validation dataset        
         files_to_sessions=None
         with open(files_to_sessions_name, 'rb') as handle:
             files_to_sessions = pickle.load(handle) 
-       
-        dataset_splits = {
-            "BallSqueezingHD_modified": {
-                "stats_template": {'run-1': 0, 'run-2': 0, 'run-3': 0},
-                "train_sessions": {'run-1', 'run-2'},
-                "validation_sessions": {'run-3'},
-            },
-            "FreshMotor": {
-                # FreshMotor stores each hand/duration combination as its own "run".
-                "stats_template": {
-                    'run-left2s': 0,
-                    'run-right2s': 0,
-                    'run-left3s': 0,
-                    'run-right3s': 0,
-                },
-                # Use 2s trials for training and reserve the longer 3s trials for validation.
-                "train_sessions": {'run-left2s', 'run-right2s'},
-                "validation_sessions": {'run-left3s', 'run-right3s'},
-            },
-        }
-        if dataset_name not in dataset_splits:
-            raise ValueError(f"No run split configuration for dataset '{dataset_name}'")
 
-        split_cfg = dataset_splits[dataset_name]
-        stats_run = split_cfg["stats_template"].copy()
-        train_sessions = split_cfg["train_sessions"]
-        validation_sessions = split_cfg["validation_sessions"]
+        # Use the configured run sets directly.
+        run_set = set(train_runs) | set(val_runs)
+        if not run_set:
+            raise ValueError("No runs specified in train_runs/val_runs.")
+
+        train_sessions = set(train_runs)
+        validation_sessions = set(val_runs)
 
         train_data_, validation_data = [], []
-        for file in train_data:
+        for file in candidate_segments:
             run_name = files_to_sessions[file]
-            if run_name not in stats_run:
+            if run_name not in run_set:
                 raise ValueError(f"Unknown run '{run_name}' for dataset '{dataset_name}'")
-            stats_run[run_name] += 1
+            freq_tag = _extract_file_info(file, files_to_sessions)[2]
 
-            if run_name in train_sessions:
+            in_train = (run_name in train_sessions) and (freq_tag in train_freq_tags)
+            in_val = (run_name in validation_sessions) and (freq_tag in val_freq_tags)
+
+            if in_train:
                 train_data_.append(file)
-            elif run_name in validation_sessions:
+            if in_val:
                 validation_data.append(file)
-            else:
-                raise ValueError(f"Run '{run_name}' not assigned to train/validation split")
         train_data = np.array(train_data_)
-        validation_data_all = np.array(validation_data)
-
-        # remofe other augmentations
-        validation_data = []
-        for file in validation_data_all:
-            if 'frq0.5' in file:
-                validation_data.append(file)
         validation_data = np.array(validation_data)
 
-        test_data = []
-        #only load the correct
-        test_events = events.format(0.5, 0.5)
-        with open(test_events, 'rb') as handle:
-                test_meta = pickle.load(handle)
+        test_meta = meta_events_by_freq[test_freq]
         test_data = test_meta[REMOVE_SUB]
 
         train_summary = summarize_split(train_data, files_to_sessions)
@@ -313,10 +304,10 @@ def main():
                 f1_max = np.mean(val_f1)
                 torch.save(
                     model.state_dict(),
-                    os.path.join(models_dir, 'model_{}_{}.tm'.format(model_name, REMOVE_SUB))
+                    os.path.join(models_dir, f"model_{run_name}_{REMOVE_SUB}.tm")
                 )
 
-            test_loss, test_f1= [], []
+            test_loss, test_f1 = [], []
             for it, (x, y) in enumerate(testing_generator):
                 #x = x.flatten(1, 2)
                 y_hat = model(x.cuda())
@@ -328,10 +319,8 @@ def main():
             print('\n-----LOSO Test- loss {:.4f} and f1: {:.2f}'.format(np.mean(test_loss), np.mean(test_f1)))
 
             mats.append([np.mean(train_loss), np.mean(train_f1), np.mean(val_loss), np.mean(val_f1), np.mean(test_loss), np.mean(test_f1)])
-            temp = np.array(mats)
-            
             np.save(
-                os.path.join(loss_dir, 'mats_{}_{}'.format(model_name, REMOVE_SUB)),
+                os.path.join(loss_dir, f"mats_{run_name}_{REMOVE_SUB}"),
                 np.array(mats)
             )
 
