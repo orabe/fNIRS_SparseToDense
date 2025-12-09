@@ -12,6 +12,7 @@ import torch
 import os
 from torch import optim
 import os
+from datetime import datetime
 
 from models import CNN2D_BaselineV2, CNN2DModel, Dataset, PreloadedDataset
 
@@ -48,6 +49,52 @@ def build_loader(file_paths, batch_size, shuffle=True, preload=True):
     return torch.utils.data.DataLoader(dataset, **params)
 
 
+def _extract_file_info(file_path, files_to_sessions):
+    """Return subject id, run name, and frequency tag for a sample path."""
+    path_str = str(file_path)
+    norm_path = os.path.normpath(path_str)
+    parts = norm_path.split(os.sep)
+
+    freq = next((p for p in parts if p.startswith('frq')), 'unknown_freq')
+    subject = next((p for p in parts if p.startswith('sub-')), 'unknown_subject')
+
+    run = files_to_sessions.get(path_str)
+    if run is None:
+        run = files_to_sessions.get(path_str.replace(os.sep, '/'), 'unknown_run')
+
+    return subject, run, freq
+
+
+def summarize_split(file_paths, files_to_sessions):
+    """Summarize subject/run/frequency usage for a split."""
+    summary = {}
+    for file_path in file_paths:
+        subject, run, freq = _extract_file_info(file_path, files_to_sessions)
+        subj_entry = summary.setdefault(subject, {})
+        subj_entry.setdefault(freq, set()).add(run)
+    return summary
+
+
+def format_summary_lines(split_name, summary, sample_count):
+    lines = [f"{split_name} ({sample_count} samples):"]
+    if not summary:
+        lines.append("  - (no samples)")
+        return lines
+
+    for subject in sorted(summary):
+        freq_chunks = []
+        for freq in sorted(summary[subject]):
+            runs = sorted(summary[subject][freq])
+            freq_chunks.append(f"{freq} [{', '.join(runs)}]")
+        lines.append(f"  - {subject}: " + "; ".join(freq_chunks))
+    return lines
+
+
+def append_log(log_path, lines):
+    with open(log_path, 'a') as handle:
+        handle.write("\n".join(lines))
+        handle.write("\n")
+
 
 
 
@@ -64,7 +111,7 @@ def main():
     }
 
     freqs = [0.2, 0.5, 0.7]
-    lr = 1e-7
+    lr = 1e-4
     batch_size = 32
     use_preloaded_dataset = True
     
@@ -86,8 +133,22 @@ def main():
     training_root = os.path.join("training", dataset_name)
     models_dir = os.path.join(training_root, model_name, 'models')
     loss_dir = os.path.join(training_root, model_name, 'loss')
+    log_dir = os.path.join(training_root, model_name, 'logs')
     os.makedirs(models_dir, exist_ok=True)
     os.makedirs(loss_dir, exist_ok=True)
+    os.makedirs(log_dir, exist_ok=True)
+    split_log_path = os.path.join(log_dir, f"split_usage_{model_name}.log")
+
+    append_log(
+        split_log_path,
+        [
+            "",
+            f"=== Run started {datetime.now().isoformat()} ===",
+            f"Model: {model_name}",
+            f"Dataset: {dataset_name}",
+            f"Frequencies: {', '.join(str(f) for f in freqs)}",
+        ],
+    )
 
     events = os.path.join(
         "datasets/processed",
@@ -178,6 +239,21 @@ def main():
                 test_meta = pickle.load(handle)
         test_data = test_meta[REMOVE_SUB]
 
+        train_summary = summarize_split(train_data, files_to_sessions)
+        val_summary = summarize_split(validation_data, files_to_sessions)
+        test_summary = summarize_split(test_data, files_to_sessions)
+
+        split_lines = [
+            "",
+            f"--- LOSO hold-out subject: {REMOVE_SUB} ---",
+            *format_summary_lines("Train split", train_summary, len(train_data)),
+            *format_summary_lines("Validation split", val_summary, len(validation_data)),
+            *format_summary_lines("Test split", test_summary, len(test_data)),
+        ]
+
+        print("\n".join(split_lines))
+        append_log(split_log_path, split_lines)
+
         print('train on:', train_data.shape[0], 'validate on:', validation_data.shape[0],  'test on:', len(test_data))
                 
         print('CUDA:', torch.cuda.is_available())
@@ -197,7 +273,7 @@ def main():
 
         mats = []
         f1_max = -np.inf
-        for epoch in range(200):
+        for epoch in range(50):
             print('\nEpoch-----------{}------{}'.format(epoch, model_name))
 
             model.train()
