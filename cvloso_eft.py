@@ -97,33 +97,16 @@ def main():
         },
     }
 
-    # train_runs = {'run-1', 'run-2'}
-    # val_runs = {'run-3'}
-
-    # train_freqs = {0.2, 0.5, 0.7}
-    # val_freqs = {0.5}
-    # test_freq = 0.5
     
-    # train_freqs = {0.2, 0.5, 0.7}
-    # val_freqs = {0.2, 0.5, 0.7}
-    # test_freq = 0.5
-    
-    # train_freqs = {0.5}
-    # val_freqs = {0.5}
-    # test_freq = 0.5
-
-    # train_runs = {'run-1', 'run-2', 'run-3'}
-    # val_runs = {'run-3'}
-    # train_freqs = {0.5}
-    # val_freqs = {0.5}
-    # test_freq = 0.5
-    
-    train_runs = {'run-2', 'run-3'}
-    val_runs = {'run-1'}
-    train_freqs = {0.2, 0.5, 0.7}
+    train_runs = {'run-1', 'run-2', 'run-3'}
+    val_runs = {}
+    train_freqs = {0.2, 0.7}
     val_freqs = {0.5}
     test_freq = 0.5
 
+    mix_train_and_val = True
+    val_split_ratio = 0.3
+    split_seed = 42
     
     lr = 1e-4
     batch_size = 32
@@ -162,6 +145,9 @@ def main():
             f"Train freqs: {sorted(train_freqs)}",
             f"Validation freqs: {sorted(val_freqs)}",
             f"Test freq: {test_freq}",
+            f"Mix train/val before split: {mix_train_and_val}",
+            f"Validation split ratio (if mixed): {val_split_ratio}",
+            f"Validation split seed (if mixed): {split_seed}",
         ],
     )
 
@@ -226,6 +212,15 @@ def main():
                 validation_data.append(file)
         train_data = np.array(train_data_)
         validation_data = np.array(validation_data)
+
+        if mix_train_and_val:
+            combined = np.concatenate([train_data, validation_data])
+            rng = np.random.default_rng(split_seed)
+            perm = rng.permutation(len(combined))
+            split_idx = int(len(combined) * val_split_ratio)
+
+            validation_data = combined[perm[:split_idx]]
+            train_data = combined[perm[split_idx:]]
 
         test_meta = meta_events_by_freq[test_freq]
         test_data = test_meta[REMOVE_SUB]
