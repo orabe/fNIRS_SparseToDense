@@ -2,8 +2,6 @@ import pandas as pd
 import numpy as np
 import os
 import glob
-import cedalion
-import cedalion.sigproc.motion_correct as motion_correct
 import random
 
 def create_train_test_files(bids_path, preprocessed_path, test_subjects_list=None, test_subject_percentage=0.2):
@@ -159,7 +157,8 @@ def create_train_test_segments(bids_path, preprocessed_path, test_subjects_list=
 
     train_files =  []
     for train_subject in train_subjects_list:
-        train_files += glob.glob(os.path.join(preprocessed_path, train_subject, "**", "*.nc"))
+        # train_files += glob.glob(os.path.join(preprocessed_path, train_subject, "**", "*.nc"))
+        train_files += glob.glob(os.path.join(preprocessed_path, train_subject, "**", "*.nc"), recursive=True)
     train_labels = []
     for f in train_files:
         if os.path.basename(f).endswith("_test.nc"):
@@ -172,7 +171,8 @@ def create_train_test_segments(bids_path, preprocessed_path, test_subjects_list=
     
     test_files =  []
     for test_subject in test_subjects_list:
-        test_files += glob.glob(os.path.join(preprocessed_path, test_subject, "**", "*_test.nc"))
+        # test_files += glob.glob(os.path.join(preprocessed_path, test_subject, "**", "*_test.nc"))
+        test_files += glob.glob(os.path.join(preprocessed_path, test_subject, "**", "*_test.nc"), recursive=True)
     test_labels = []
     for f in test_files:
         if os.path.basename(f).endswith("_test.nc"):
@@ -261,7 +261,8 @@ def create_train_test_segments_grad(bids_path, preprocessed_path, test_subjects_
     
     test_files =  []
     for test_subject in test_subjects_list:
-        test_files += glob.glob(os.path.join(preprocessed_path, test_subject, "**", "*_test.nc"))
+        # test_files += glob.glob(os.path.join(preprocessed_path, test_subject, "**", "*_test.nc"))
+        test_files += glob.glob(os.path.join(preprocessed_path, test_subject, "**", "*_test.nc"), recursive=True)
     test_labels = []
     for f in test_files:
         if os.path.basename(f).endswith("_test.nc"):

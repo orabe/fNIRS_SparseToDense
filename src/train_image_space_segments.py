@@ -13,6 +13,16 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import f1_score
 from utils import create_train_test_files, create_train_test_segments, create_train_test_segments_grad
 warnings.filterwarnings("ignore")
+import logging
+import sys
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
+
 
 
 print("hello hydra")
@@ -82,21 +92,34 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Load datasets
-    base_dir = "/home"
-    dataset_path = os.path.join(base_dir, "data/BallSqueezingHD_modified")
-    preprocessed_path = os.path.join(base_dir, "data/yuanyuan_v2_processed_partial/")
-    
+    # base_dir = "/home"
+    # dataset_path = os.path.join(base_dir, "data/BallSqueezingHD_modified")
+    # preprocessed_path = os.path.join(base_dir, "data/yuanyuan_v2_processed_partial/")
+    # DATASET_NAME = "BallSqueezingHD_modified"
+    DATASET_NAME = "parcel_FreshMotor"
+    preprocessed_path = os.path.join("datasets/processed", DATASET_NAME)
+        
+    os.makedirs(f"results/{DATASET_NAME}/checkpoints/", exist_ok=True)
+        
     # subject_ids = ['sub-170', 'sub-173', 'sub-176', 'sub-179',
     #             'sub-182', 'sub-577', 'sub-581', 'sub-586',  
     #             'sub-613', 'sub-619', 'sub-633', 'sub-177',  
     #             'sub-181', 'sub-183', 'sub-185', 'sub-568', 
     #             'sub-580', 'sub-583', 'sub-587', 'sub-592',  
     #             'sub-618', 'sub-621', 'sub-638', 'sub-640']
-    subject_ids = ['sub-170', 'sub-173', 'sub-171', 'sub-174', 'sub-176', 'sub-179',
-                'sub-182', 'sub-177', 'sub-181', 'sub-183', 'sub-184', 'sub-185']
+    
+    if DATASET_NAME == "parcel_BallSqueezingHD_modified":
+        subject_ids = ['sub-170', 'sub-173', 'sub-171', 'sub-174',
+                       'sub-176', 'sub-179', 'sub-182', 'sub-177',
+                       'sub-181', 'sub-183', 'sub-184', 'sub-185']
+    elif DATASET_NAME == "parcel_FreshMotor":
+        subject_ids = ['sub-01', 'sub-02', 'sub-03', 'sub-04',
+                       'sub-05', 'sub-06', 'sub-07', 'sub-08',
+                       'sub-09', 'sub-10']
+        
+    k = len(subject_ids)  # = 10 FreshMotor, 12 BSQ-HD (LOSO)
 
     # Parameters
-    k = 12
     random_state = 42  # For reproducibility
 
     # Shuffle the subject list
@@ -120,9 +143,12 @@ if __name__ == "__main__":
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(device)
 
-        train_csv_path, test_csv_path = create_train_test_segments(None, preprocessed_path, 
-                                                                   test_subjects_list=fold, 
-                                                                   exclude_subjects=exclude_subjects)
+        train_csv_path, test_csv_path = create_train_test_segments(
+            None,
+            preprocessed_path,
+            test_subjects_list=fold,
+            exclude_subjects=exclude_subjects
+        )
         train_csv = pd.read_csv(train_csv_path)
         test_csv = pd.read_csv(test_csv_path)
 
@@ -166,17 +192,22 @@ if __name__ == "__main__":
             train_f1_avgs.append(train_f1_avg)
             train_f1s.append(train_f1)
 
-            print(f"Sub: {subs}, Epoch [{epoch+1}/{num_epochs}], Train Loss: {train_loss:.4f}, Train Accuracy: {train_accuracy:.4f}, "
-                f"Test Loss: {test_loss:.4f}, Test Accuracy: {test_accuracy:.4f}, Test F1 Score: {test_f1:.4f}, "
-                f"Test F1 Avg: {test_f1_avg:.4f}")
+            logging.info(f"Sub: {subs}, Epoch [{epoch+1}], Train F1: {train_f1:.4f}, Test F1: {test_f1:.4f}")
+
+            # print(f"Sub: {subs}, Epoch [{epoch+1}/{num_epochs}], Train Loss: {train_loss:.4f}, Train Accuracy: {train_accuracy:.4f}, "
+            #     f"Test Loss: {test_loss:.4f}, Test Accuracy: {test_accuracy:.4f}, Test F1 Score: {test_f1:.4f}, "
+            #     f"Test F1 Avg: {test_f1_avg:.4f}")
        
         res = {"train_loss": train_losses, "train_accuracy": train_accuracies,
                 "test_loss": test_losses, "test_accuracy": test_accuracies, "test_f1": test_f1s,
                 "test_f1_avg": test_f1_avgs, "test_acc_avg": test_acc_avg,
                 "train_f1": train_f1s, "train_f1_avg": train_f1_avgs, "train_acc_avg": train_acc_avg}
-        with open(f"/home/results/res_{subs}_{chromo}.pkl", "wb") as f:
+        
+        with open(f"results/{DATASET_NAME}/res_{subs}_{chromo}.pkl", "wb") as f:
             pickle.dump(res, f)
 
-        # Save the trained model
-        torch.save(model.state_dict(), f"/home/checkpoints/model_{subs}_{chromo}.pth")
+        torch.save(model.state_dict(), f"results/{DATASET_NAME}/checkpoints/model_{subs}_{chromo}.pth")
+        
         print("Model saved successfully!")
+    
+    print("\n-----Training complete! -----\n")

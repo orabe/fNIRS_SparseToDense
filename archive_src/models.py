@@ -92,9 +92,11 @@ class CNN2D_BaselineV2(nn.Module):
             super().__init__()
             self.model = nn.Sequential(
             
-            nn.Conv2d(109, 64, kernel_size=(1, 3)), # parcel space
+            # nn.Conv2d(109, 64, kernel_size=(1, 3)), # parcel space
             # nn.Conv2d(100, 64, kernel_size=(1, 3)), # channel space - BSQ
             # nn.Conv2d(68, 64, kernel_size=(1, 3)), # channel space - freshmotor
+            
+            nn.Conv2d(110, 64, kernel_size=(1, 3)), # parcel space
             nn.ReLU(),
             nn.Dropout(0.6),
             nn.InstanceNorm2d(64),

@@ -1,11 +1,9 @@
 import torch
 import pickle
-import cedalion
 import numpy as np
 import pandas as pd
 import xarray as xr
 from torch.utils.data import Dataset
-import cedalion.sigproc.motion_correct as motion_correct
 
 
 class PreprocessedNIRSDataset(Dataset):

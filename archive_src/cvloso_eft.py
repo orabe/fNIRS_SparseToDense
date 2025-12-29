@@ -111,20 +111,20 @@ def main():
     
     # Base split is built from all freq=0.5 runs; optional sets control extra datasets appended afterward.
     base_split_freq = 0.5
-    extra_train_freqs = {0.7, 1.0} # or set()
+    extra_train_freqs = set() # {0.7, 1.0} # or set()
     extra_val_freqs = set()  # add {0.7} to append frq0.7 samples to the val split
     test_freq = 0.5
 
     val_split_ratio = 0.33
     split_seed = 42
     
-    lr = 1e-5
-    batch_size = 32
-    epochs = 200
+    lr = 1e-4
+    batch_size = 16
+    epochs = 300
     use_preloaded_dataset = False
     
-    # dataset_name = "BallSqueezingHD_modified"
-    dataset_name = "FreshMotor"
+    dataset_name = "BallSqueezingHD_modified"
+    # dataset_name = "FreshMotor"
     
     selected_model_key = 'baseline'
 

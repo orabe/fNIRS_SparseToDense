@@ -1,0 +1,518 @@
+import pickle
+import numpy as np
+from sklearn.metrics import f1_score
+import torch
+import os
+from torch import nn, optim
+from datetime import datetime
+
+
+# -------------------------------------------------
+
+import torch
+import glob
+import pickle
+import numpy as np
+from sklearn.metrics import f1_score
+import matplotlib.pyplot as plt
+plt.style.use('ggplot')
+from pathlib import PureWindowsPath
+from torch import nn
+import torch.nn as nn
+import torch
+import os
+from torch import optim
+import os    
+
+class Dataset(torch.utils.data.Dataset):
+    def __init__(self, files):
+            self.files = files
+            self.labels = {'Right':1, 'Left':2}
+
+    def __len__(self):
+            return len(self.files)
+
+    def normalize(self, x):
+        x = x.to_numpy()
+        return (x - np.min(x))/ np.ptp(x)
+    
+    def normalize_chromo(self, x):
+        data = []
+        for chan in range(x.shape[1]):
+            chromo = []
+            for chr in range(x.shape[0]):
+                chromo.append(self.normalize(x[chr, chan, :]))
+            data.append(chromo)
+        return np.array(data)
+
+    def __getitem__(self, index):
+        'Generates one sample of data'
+        # Select sample
+        segmentfile = self.files[index]
+
+        # read
+        segment = None
+        with open(segmentfile, 'rb') as handle:
+            segment = pickle.load(handle)
+        
+        #normalize
+        xt = torch.from_numpy(segment['xt'].to_numpy()).float() #[chromo, chan, time])
+        # xt = torch.from_numpy(segment['xt_conc_pcr'].to_numpy()).float() #[chromo, chan, time])
+        y = segment['class']-1
+
+        return xt, y
+
+class PreloadedDataset(torch.utils.data.Dataset):
+    """Eagerly load all segments into RAM to minimize per-batch I/O overhead."""
+
+    def __init__(self, files, dtype=torch.float32, pin_memory=False):
+        self.samples = []
+        self.labels = []
+        self.dtype = dtype
+        self.pin_memory = pin_memory
+        files = list(files)
+        if len(files) == 0:
+            raise ValueError("PreloadedDataset received an empty file list.")
+
+        print(f"Preloading {len(files)} samples into memory...")
+        for idx, segmentfile in enumerate(files, start=1):
+            with open(segmentfile, 'rb') as handle:
+                segment = pickle.load(handle)
+
+            xt = torch.from_numpy(segment['xt'].to_numpy()).to(dtype).contiguous()
+            y = torch.tensor(segment['class'] - 1, dtype=torch.long)
+
+            if pin_memory:
+                xt = xt.pin_memory()
+                y = y.pin_memory()
+
+            self.samples.append(xt)
+            self.labels.append(y)
+
+            if idx % 100 == 0 or idx == len(files):
+                print(f"  Loaded {idx}/{len(files)} samples")
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, index):
+        return self.samples[index], self.labels[index]
+
+class CNN2D_BaselineV2(nn.Module):
+    def __init__(self) -> None:
+            super().__init__()
+            self.model = nn.Sequential(
+            
+            # nn.Conv2d(109, 64, kernel_size=(1, 3)), # parcel space
+            # nn.Conv2d(100, 64, kernel_size=(1, 3)), # channel space - BSQ
+            # nn.Conv2d(68, 64, kernel_size=(1, 3)), # channel space - freshmotor
+            
+            nn.Conv2d(110, 64, kernel_size=(1, 3)), # parcel space
+            nn.ReLU(),
+            nn.Dropout(0.6),
+            nn.InstanceNorm2d(64),
+            nn.MaxPool2d(kernel_size=(1, 3)),
+            
+            nn.Conv2d(64, 32, kernel_size=(1, 3)),
+            nn.ReLU(),
+            nn.Dropout(0.6),
+            nn.InstanceNorm2d(32),
+            nn.MaxPool2d(kernel_size=(1, 3)),
+            
+            nn.Conv2d(32, 16, kernel_size=(1, 3)),
+            nn.ReLU(),
+            nn.Dropout(0.6),
+            nn.InstanceNorm2d(16),
+            nn.MaxPool2d(kernel_size=(1, 3)),
+            nn.Flatten(start_dim=1),
+            nn.Dropout(0.5),
+            
+            nn.Linear(16*4, 2),
+            # nn.Softmax(dim=-1)
+        )
+    def forward(self, x):
+        # print(x.shape) # (Batch, Chromo, Channels, Time) -> [32, 2, 109, 90]
+        # x = x.permute(0, 2, 1, 3)
+        # print(x.shape) # (Batch, Channels, Chromo, Time) -> [32, 109, 2, 90]
+        return self.model(x)
+
+class CNN2DModel(nn.Module):
+    def __init__(self, num_classes=2):
+        super(CNN2DModel, self).__init__()
+        self.conv = nn.Sequential(
+            nn.Conv2d(2, 8, kernel_size=(3, 1), padding=1),
+            nn.LeakyReLU(0.2),  
+            nn.BatchNorm2d(8),
+            nn.Dropout(0.3),
+            nn.Conv2d(8, 12, kernel_size=(3, 1), padding=1),
+            nn.LeakyReLU(0.2),  
+            nn.BatchNorm2d(12),
+            nn.Dropout(0.3),
+            nn.MaxPool2d(kernel_size=(3, 1)),
+            nn.Conv2d(12, 24, kernel_size=(3, 1), padding=1),
+            nn.LeakyReLU(0.2),  
+            nn.BatchNorm2d(24),
+            nn.MaxPool2d(kernel_size=(1, 3)),
+            nn.Dropout(0.3),
+            nn.Conv2d(24, 24, kernel_size=(3, 1), padding=1),
+            nn.LeakyReLU(0.2),  
+            nn.BatchNorm2d(24),
+            nn.MaxPool2d(kernel_size=(3, 3)),
+            nn.Dropout(0.3),
+            nn.Conv2d(24, 32, kernel_size=(3, 1), padding=1),
+            nn.LeakyReLU(0.2),  
+            nn.BatchNorm2d(32),
+            nn.Dropout(0.3),
+            nn.Conv2d(32, 32, kernel_size=(3, 1), padding=1),
+            nn.LeakyReLU(0.3),  
+            nn.BatchNorm2d(32),
+            nn.Dropout(0.3),
+            nn.MaxPool2d(kernel_size=(3, 3)),
+            nn.Conv2d(32, 32, kernel_size=(3, 3), padding=1),
+            nn.LeakyReLU(0.2),  
+            nn.BatchNorm2d(32),
+            nn.Dropout(0.3),
+            nn.MaxPool2d(kernel_size=(3, 3)),
+            nn.Conv2d(32, 32, kernel_size=(1, 1), padding=1),
+            nn.LeakyReLU(0.2),  
+            nn.BatchNorm2d(32),
+            nn.Dropout(0.3),
+            nn.Conv2d(32, 48, kernel_size=(1, 1), padding=1),
+            nn.LeakyReLU(0.2),  
+            nn.BatchNorm2d(48),
+            nn.Dropout(0.3),
+            nn.MaxPool2d(kernel_size=(3, 3)),
+            nn.Flatten(start_dim=1),
+            # nn.Linear(48*4, 32),
+            nn.Linear(48, 32),
+            nn.Dropout(0.3),
+            nn.LeakyReLU(0.2),
+            nn.Linear(32, num_classes),
+            nn.Softmax(dim=1)
+        )
+
+    def forward(self, x):
+        out = self.conv(x.permute(0, 2, 1, 3))  # [B, C, N, T]
+        return out
+
+
+
+
+
+
+
+
+# -------------------------------------------------
+
+def build_model(model_spec):
+    return model_spec['builder']()
+
+
+def make_dataset(file_paths, preload):
+    """Create dataset, optionally preloading all data into RAM."""
+    if isinstance(file_paths, np.ndarray):
+        file_paths = file_paths.tolist()
+    file_paths = list(file_paths)
+
+    if preload:
+        return PreloadedDataset(file_paths, pin_memory=True)
+    return Dataset(file_paths)
+
+
+def build_loader(file_paths, batch_size, shuffle=True, preload=True):
+    """Create DataLoader for the given file paths."""
+    dataset = make_dataset(file_paths, preload=preload)
+    params = {
+        'batch_size': batch_size,
+        'shuffle': shuffle,
+        'num_workers': 0 if preload else 4,
+        'pin_memory': True,
+    }
+    return torch.utils.data.DataLoader(dataset, **params)
+
+
+def collect_paths(meta_events_by_freq, freq_values, excluded_subject):
+    """Collect file paths for the requested frequencies, skipping the held-out subject."""
+    collected = []
+    for frequency in freq_values:
+        for subject, entries in meta_events_by_freq.get(frequency, {}).items():
+            if subject == excluded_subject:
+                continue
+            collected.extend(entries)
+    return collected
+
+
+def _extract_file_info(file_path, files_to_sessions):
+    """Return subject id, run name, and frequency tag for a sample path."""
+    path_str = str(file_path)
+    norm_path = os.path.normpath(path_str)
+    parts = norm_path.split(os.sep)
+
+    freq = next((p for p in parts if p.startswith('frq')), 'unknown_freq')
+    subject = next((p for p in parts if p.startswith('sub-')), 'unknown_subject')
+
+    run = files_to_sessions.get(path_str)
+    if run is None:
+        run = files_to_sessions.get(path_str.replace(os.sep, '/'), 'unknown_run')
+
+    return subject, run, freq
+
+
+def summarize_split(file_paths, files_to_sessions):
+    """Summarize subject/run/frequency usage for a split."""
+    summary = {}
+    for file_path in file_paths:
+        subject, run, freq = _extract_file_info(file_path, files_to_sessions)
+        subj_entry = summary.setdefault(subject, {})
+        subj_entry.setdefault(freq, set()).add(run)
+    return summary
+
+
+def format_summary_lines(split_name, summary, sample_count):
+    lines = [f"{split_name} ({sample_count} samples):"]
+    if not summary:
+        lines.append("  - (no samples)")
+        return lines
+
+    for subject in sorted(summary):
+        freq_chunks = []
+        for freq in sorted(summary[subject]):
+            runs = sorted(summary[subject][freq])
+            freq_chunks.append(f"{freq} [{', '.join(runs)}]")
+        lines.append(f"  - {subject}: " + "; ".join(freq_chunks))
+    return lines
+
+
+def append_log(log_path, lines):
+    with open(log_path, 'a') as handle:
+        handle.write("\n".join(lines))
+        handle.write("\n")
+
+
+
+
+def main():
+    model_variants = {
+        'baseline': {
+            'label': 'CNN2D_BaselineV2',
+            'builder': CNN2D_BaselineV2,
+        },
+        'cnn2d': {
+            'label': 'CNN2DModel',
+            'builder': lambda: CNN2DModel(num_classes=2),
+        },
+    }
+
+    
+    # Base split is built from all freq=0.5 runs; optional sets control extra datasets appended afterward.
+    base_split_freq = 0.5
+    extra_train_freqs = set() # {0.7, 1.0} # or set()
+    extra_val_freqs = set()  # add {0.7} to append frq0.7 samples to the val split
+    test_freq = 0.5
+
+    val_split_ratio = 0.05
+    split_seed = 42
+    
+    lr = 1e-4
+    batch_size = 16
+    epochs = 300
+    use_preloaded_dataset = False
+    
+    dataset_name = "BallSqueezingHD_modified"
+    # dataset_name = "FreshMotor"
+    
+    selected_model_key = 'baseline'
+
+    model_spec = model_variants[selected_model_key]
+    base, exp = f"{lr:.0e}".split("e")
+    lr_tag = f"lr{base}e{int(exp)}"
+    model_name = f"{model_spec['label']}_{lr_tag}"
+    run_tag = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_name = f"{model_name}__{run_tag}"
+
+    training_root = os.path.join("training", dataset_name, run_name)
+    models_dir = os.path.join(training_root, 'models')
+    loss_dir = os.path.join(training_root, 'loss')
+    log_dir = os.path.join(training_root, 'logs')
+    os.makedirs(models_dir, exist_ok=True)
+    os.makedirs(loss_dir, exist_ok=True)
+    os.makedirs(log_dir, exist_ok=True)
+    split_log_path = os.path.join(log_dir, f"split_usage_{run_name}.log")
+
+    append_log(
+        split_log_path,
+        [
+            "",
+            f"=== Run started {datetime.now().isoformat()} ===",
+            f"Model: {model_name}",
+            f"Run tag: {run_tag}",
+            f"Dataset: {dataset_name}",
+            f"Base split freq: frq{base_split_freq}",
+            f"Extra train freq tags: {sorted(f'frq{f}' for f in extra_train_freqs) if extra_train_freqs else 'none'}",
+            f"Extra val freq tags: {sorted(f'frq{f}' for f in extra_val_freqs) if extra_val_freqs else 'none'}",
+            f"Test freq: frq{test_freq}",
+            f"Validation split ratio: {val_split_ratio}",
+            f"Validation split seed: {split_seed}",
+        ],
+    )
+
+    events = os.path.join(
+        "datasets/processed",
+        dataset_name,
+        "frq{}",
+        "meta_event_{}.pkl",
+    )
+
+    files_to_sessions_name = os.path.join(
+        "datasets/processed",
+        dataset_name,
+        "files_to_sessions.pkl",
+    )
+
+    with open(files_to_sessions_name, 'rb') as handle:
+        files_to_sessions = pickle.load(handle)
+
+    freqs_to_load = sorted({base_split_freq, test_freq} | extra_train_freqs | extra_val_freqs)
+    meta_events_by_freq = {}
+    for freq in freqs_to_load:
+        with open(events.format(freq, freq), 'rb') as handle:
+            meta_events_by_freq[freq] = pickle.load(handle)
+
+    # train-data
+    subjects = list(meta_events_by_freq.get(base_split_freq, {}).keys())
+    if not subjects:
+        raise ValueError(f"No subjects available for base split frequency frq{base_split_freq}.")
+
+    for REMOVE_SUB in subjects:  # iterate over the subjects in a LOSO evaluation.
+        base_candidates = collect_paths(meta_events_by_freq, {base_split_freq}, REMOVE_SUB)
+        if not base_candidates:
+            raise ValueError(
+                f"No frq{base_split_freq} samples available for LOSO hold-out subject '{REMOVE_SUB}'."
+            )
+
+        # Shuffle the base-frequency pool once per subject so split is reproducible with the seed.
+        rng = np.random.default_rng(split_seed)
+        perm = rng.permutation(len(base_candidates))
+
+        if len(base_candidates) > 1:
+            val_count = int(len(base_candidates) * val_split_ratio)
+            val_count = max(1, min(val_count, len(base_candidates) - 1))
+        else:
+            val_count = len(base_candidates)
+
+        # Keep 70/30 split of the shuffled base-frequency samples as training/validation anchors.
+        base_val = [base_candidates[i] for i in perm[:val_count]]
+        base_train = [base_candidates[i] for i in perm[val_count:]]
+
+        train_extra = collect_paths(meta_events_by_freq, extra_train_freqs, REMOVE_SUB)
+        val_extra = collect_paths(meta_events_by_freq, extra_val_freqs, REMOVE_SUB)
+
+        train_data = np.array(base_train + train_extra, dtype=object)
+        validation_data = np.array(base_val + val_extra, dtype=object)
+
+        test_meta = meta_events_by_freq[test_freq]
+        test_data = test_meta[REMOVE_SUB]
+
+        train_summary = summarize_split(train_data, files_to_sessions)
+        val_summary = summarize_split(validation_data, files_to_sessions)
+        test_summary = summarize_split(test_data, files_to_sessions)
+
+        split_lines = [
+            "",
+            f"--- LOSO hold-out subject: {REMOVE_SUB} ---",
+            f"Base freq frq{base_split_freq}: {len(base_candidates)} total -> "
+            f"{len(base_train)} train / {len(base_val)} val",
+            f"Extra appended: {len(train_extra)} train from "
+            f"{sorted(f'frq{f}' for f in extra_train_freqs) or 'none'}; "
+            f"{len(val_extra)} val from {sorted(f'frq{f}' for f in extra_val_freqs) or 'none'}",
+            *format_summary_lines("Train split", train_summary, len(train_data)),
+            *format_summary_lines("Validation split", val_summary, len(validation_data)),
+            *format_summary_lines("Test split", test_summary, len(test_data)),
+        ]
+
+        print("\n".join(split_lines))
+        append_log(split_log_path, split_lines)
+
+        print('train on:', train_data.shape[0], 'validate on:', validation_data.shape[0],  'test on:', len(test_data))
+                
+        print('CUDA:', torch.cuda.is_available())
+
+        # Dataloaders (preloaded by default for speed)
+        training_generator = build_loader(train_data, batch_size=batch_size, shuffle=True, preload=use_preloaded_dataset)
+        validation_generator = build_loader(validation_data, batch_size=batch_size, shuffle=True, preload=use_preloaded_dataset)
+        testing_generator = build_loader(test_data, batch_size=batch_size, shuffle=True, preload=use_preloaded_dataset)
+
+        # model
+        model = build_model(model_spec)
+        print('number of parameters:', sum(p.numel() for p in model.parameters() if p.requires_grad))
+
+        model.cuda()
+        optim = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-5, betas=(0.9, 0.999))
+        loss_function = nn.CrossEntropyLoss()
+
+        mats = []
+        f1_max = -np.inf
+        for epoch in range(epochs):
+            print('\nEpoch-----------{}------{}'.format(epoch, model_name))
+
+            model.train()
+            train_f1, train_loss = [], []
+            for it, (x, y) in enumerate(training_generator):
+                optim.zero_grad()
+                
+                #x = x.flatten(1, 2)
+                y_hat = model(x.cuda())
+                loss = loss_function(y_hat, y.cuda())
+                loss.backward()
+                optim.step()
+
+                f1 = f1_score(y.cpu().numpy(), y_hat.argmax(dim=-1).detach().cpu().numpy(), average='micro')
+                train_f1.append(f1)
+                train_loss.append(loss.item())
+                print('\r[{:04d}] loss: {:.2f} f1-score: {:.2f}'.format(it, loss.item(), f1), end='')
+
+            print('\n-----Train- loss {:.4f} and f1: {:.2f}'.format(np.mean(train_loss), np.mean(train_f1)))
+
+            model.eval()
+            val_loss, val_f1= [], []
+            for it, (x, y) in enumerate(validation_generator):
+                
+                #x = x.flatten(1, 2)
+                y_hat = model(x.cuda())
+                loss = loss_function(y_hat, y.cuda())
+                f1 = f1_score(y.cpu().numpy(), y_hat.argmax(dim=-1).detach().cpu().numpy(), average='micro')
+                print('\r[{:04d}] validation loss: {:.2f} f1-score: {:.2f}'.format(it,loss.item(), f1), end='')
+                val_f1.append(f1)
+                val_loss.append(loss.item())
+            print('\n-----Validation- loss {:.4f} and f1: {:.2f}'.format(np.mean(val_loss), np.mean(val_f1)))
+            
+            #save-the-model based on validation data
+            if np.mean(val_f1) > f1_max:
+                print('the performance increased from:', f1_max, ' to ', np.mean(val_f1))
+                f1_max = np.mean(val_f1)
+                torch.save(
+                    model.state_dict(),
+                    os.path.join(models_dir, f"model_{run_name}_{REMOVE_SUB}.tm")
+                )
+
+            test_loss, test_f1 = [], []
+            for it, (x, y) in enumerate(testing_generator):
+                #x = x.flatten(1, 2)
+                y_hat = model(x.cuda())
+                loss = loss_function(y_hat, y.cuda())
+                f1 = f1_score(y.cpu().numpy(), y_hat.argmax(dim=-1).detach().cpu().numpy(), average='micro')
+                print('\r[{:04d}] testing loss: {:.2f} f1-score: {:.2f}'.format(it,loss.item(), f1), end='')
+                test_f1.append(f1)
+                test_loss.append(loss.item())
+            print('\n-----LOSO Test- loss {:.4f} and f1: {:.2f}'.format(np.mean(test_loss), np.mean(test_f1)))
+
+            mats.append([np.mean(train_loss), np.mean(train_f1), np.mean(val_loss), np.mean(val_f1), np.mean(test_loss), np.mean(test_f1)])
+            np.save(
+                os.path.join(loss_dir, f"mats_{run_name}_{REMOVE_SUB}"),
+                np.array(mats)
+            )
+
+    print('Training completed.')
+
+if __name__ == "__main__":
+    main()
