@@ -20,3 +20,9 @@ __pycache__/
 *.tm
 *.err
 /datasets/
+/results/
+/data/
+/checkpoints/
+/figures/
+/plots/
+/models/
