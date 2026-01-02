@@ -3,7 +3,7 @@
 #SBATCH --partition=gpu-2d
 #SBATCH --gres=gpu:1
 #SBATCH --gpus-per-node=1
-#SBATCH --mem=64G
+#SBATCH --mem=128G
 #SBATCH --ntasks-per-node=1
 #SBATCH --error=/home/orabe/fNIRS_sparseToDense/logs/cedalion_jobs_error-%j.err
 #SBATCH --output=/home/orabe/fNIRS_sparseToDense/logs/cedalion_jobs_output-%j.out
@@ -16,6 +16,6 @@ apptainer run --nv --bind `pwd`/xkb:/var/lib/xkb,`pwd`/cedalion:/app /home/orabe
 # sbatch run_cedalion2.sh
 #  ssh -L 8888:head022:8888 -o ServerAliveInterval=60 orabe@hydra.ml.tu-berlin.de
 
-# srun --partition=gpu-2h --mem=64G --gres=gpu:1 --pty bash
+# srun --partition=gpu-2d --mem=256G --gres=gpu:1 --pty bash
 # srun --partition=gpu-5h --mem=128G --pty  bash
 # srun --partition=cpu-2h --pty bash

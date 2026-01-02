@@ -96,7 +96,7 @@ if __name__ == "__main__":
     # dataset_path = os.path.join(base_dir, "data/BallSqueezingHD_modified")
     # preprocessed_path = os.path.join(base_dir, "data/yuanyuan_v2_processed_partial/")
     # DATASET_NAME = "BallSqueezingHD_modified"
-    DATASET_NAME = "parcel_FreshMotor"
+    DATASET_NAME = "parcel_BallSqueezingHD_modified"
     preprocessed_path = os.path.join("datasets/processed", DATASET_NAME)
         
     os.makedirs(f"results/{DATASET_NAME}/checkpoints/", exist_ok=True)
