@@ -134,11 +134,15 @@ def compute_stats(pairs: list[tuple[str, str, SegmentKey]]) -> dict:
     y_mean = y_sum / y_count
     x_var = max(x_sumsq / x_count - x_mean * x_mean, 1e-8)
     y_var = max(y_sumsq / y_count - y_mean * y_mean, 1e-8)
+    x_std = np.sqrt(x_var)
+    y_std = np.sqrt(y_var)
+    if x_std < 1e-6 or y_std < 1e-6:
+        raise ValueError(f"std too small (x_std={x_std:.3e}, y_std={y_std:.3e})")
     return {
         "x_mean": x_mean,
-        "x_std": np.sqrt(x_var),
+        "x_std": x_std,
         "y_mean": y_mean,
-        "y_std": np.sqrt(y_var),
+        "y_std": y_std,
     }
 
 
@@ -228,7 +232,7 @@ def create_grid_plot(subjects):
     n_cols = min(3, n_sub)
     n_rows = math.ceil(n_sub / n_cols)
     fig, axes = plt.subplots(
-        n_rows, n_cols, figsize=(4 * n_cols, 3.5 * n_rows), squeeze=False, sharex=True, sharey=True
+        n_rows, n_cols, figsize=(4 * n_cols, 3.5 * n_rows), squeeze=False, sharex=True, sharey=False
     )
     axes_flat = axes.ravel()
 
@@ -303,6 +307,10 @@ def run_loso(pairs, epochs, batch_size, latent_dim, hidden_dim, lr, plot_dir):
     subjects = sorted({k.subject for _, _, k in pairs})
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     os.makedirs(plot_dir, exist_ok=True)
+    model_dir = os.path.join(plot_dir, "models")
+    os.makedirs(model_dir, exist_ok=True)
+    loss_dir = os.path.join(plot_dir, "losses")
+    os.makedirs(loss_dir, exist_ok=True)
 
     fig, plot_items = create_grid_plot(subjects)
     plot_path = os.path.join(plot_dir, "subset_2_loso_vae.png")
@@ -354,6 +362,10 @@ def run_loso(pairs, epochs, batch_size, latent_dim, hidden_dim, lr, plot_dir):
                     fig, ax, train_line, test_line, train_curve, test_curve, epoch, plot_path,
                 )
 
+        torch.save(model.state_dict(), os.path.join(model_dir, f"{test_subject}_vae.pth"))
+        np.save(os.path.join(loss_dir, f"{test_subject}_train_mse.npy"), np.array(train_curve))
+        np.save(os.path.join(loss_dir, f"{test_subject}_test_mse.npy"), np.array(test_curve))
+
     plt.close(fig)
     if baseline_rows:
         baseline_path = os.path.join(plot_dir, "baseline_mse.csv")
@@ -371,7 +383,7 @@ def main():
     batch_size = 8
     latent_dim = 64
     hidden_dim = 16
-    lr = 1e-3
+    lr = 1e-4
     plot_dir = "figures/parcel_cvae"
 
     pairs = list_pairs(sparse_root, dense_root)
