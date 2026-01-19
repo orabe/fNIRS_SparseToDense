@@ -96,8 +96,12 @@ if __name__ == "__main__":
     # dataset_path = os.path.join(base_dir, "data/BallSqueezingHD_modified")
     # preprocessed_path = os.path.join(base_dir, "data/yuanyuan_v2_processed_partial/")
     # DATASET_NAME = "BallSqueezingHD_modified"
-    DATASET_NAME = "parcel_BallSqueezingHD_modified"
-    preprocessed_path = os.path.join("datasets/processed", DATASET_NAME)
+    # DATASET_NAME = "parcel_BallSqueezingHD_modified"
+    # preprocessed_path = os.path.join("datasets/processed", DATASET_NAME)
+    
+    # DATASET_NAME = "fullParcel_FreshMotor"
+    DATASET_NAME = "fullParcel_BallSqueezingHD_modified"
+    preprocessed_path = os.path.join("datasets/full_processed", 'BallSqueezingHD_modified')
         
     os.makedirs(f"results/{DATASET_NAME}/checkpoints/", exist_ok=True)
         
@@ -108,11 +112,11 @@ if __name__ == "__main__":
     #             'sub-580', 'sub-583', 'sub-587', 'sub-592',  
     #             'sub-618', 'sub-621', 'sub-638', 'sub-640']
     
-    if DATASET_NAME == "parcel_BallSqueezingHD_modified":
+    if DATASET_NAME == "fullParcel_BallSqueezingHD_modified":
         subject_ids = ['sub-170', 'sub-173', 'sub-171', 'sub-174',
                        'sub-176', 'sub-179', 'sub-182', 'sub-177',
                        'sub-181', 'sub-183', 'sub-184', 'sub-185']
-    elif DATASET_NAME == "parcel_FreshMotor":
+    elif DATASET_NAME == "fullParcel_FreshMotor":
         subject_ids = ['sub-01', 'sub-02', 'sub-03', 'sub-04',
                        'sub-05', 'sub-06', 'sub-07', 'sub-08',
                        'sub-09', 'sub-10']

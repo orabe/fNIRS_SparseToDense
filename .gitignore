@@ -19,7 +19,13 @@ __pycache__/
 *.npy
 *.tm
 *.err
-/datasets/
+*.png
+*.jpg
+*.nc
+*.pth
+*.m
+*.npz
+
 /results/
 /data/
 /checkpoints/

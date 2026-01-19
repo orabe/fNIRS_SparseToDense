@@ -49,8 +49,8 @@ def plot_metric(all_results, metric_name, train_key, test_key, output_path=None,
 
 
 def main():
-    # DATASET_NAME = "BallSqueezingHD_modified"
-    DATASET_NAME = "parcel_FreshMotor"
+    # DATASET_NAME = "fullParcel_FreshMotor"
+    DATASET_NAME = "fullParcel_BallSqueezingHD_modified"
     result_patterns = [
         # "results/*/res_*.pkl",
         f"results/{DATASET_NAME}/res_*.pkl",

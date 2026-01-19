@@ -7,13 +7,10 @@
 #SBATCH --error=/home/orabe/fNIRS_sparseToDense/logs/pytorch_jobs_error-%j.err
 #SBATCH --output=/home/orabe/fNIRS_sparseToDense/logs/pytorch_jobs_output-%j.out
 
-# apptainer run --nv /home/orabe/sparse_to_dense_fnirs/pytorch_container.sif python src/cvloso_eft.py
-
-# apptainer run --nv /home/orabe/sparse_to_dense_fnirs/pytorch_container.sif python notebooks/cvloso_eft.py
-
 apptainer run --nv /home/orabe/sparse_to_dense_fnirs/pytorch_container.sif python src/train_image_space_segments.py
 
-# apptainer run --nv /home/orabe/sparse_to_dense_fnirs/pytorch_container.sif python notebooks/visualize_training_results_split_palette.py 
+# apptainer run --nv /home/orabe/sparse_to_dense_fnirs/pytorch_container.sif python src/subset/train_parcel_vae.py
+
 
 # apptainer run --nv pytorch_container.sif jupyter notebook --ip 0.0.0.0 --no-browser
 # apptainer run --nv pytorch_container.sif python src/analyze_results.py
