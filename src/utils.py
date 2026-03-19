@@ -41,6 +41,8 @@ def create_train_test_files(bids_path, preprocessed_path, test_subjects_list=Non
         events_df = events_df.drop(columns=["value"])
         events_df["snirf_file"] = snirf_file
         events_df['trial_type'] = events_df['trial_type'].map({"Left": 0, "Right": 1})
+        # events_df['trial_type'] = events_df['trial_type'].map(labels = {"rest": 0, "task": 1})
+        
         # Check if the subject is in the test list
         if subject_id in test_subjects_list:
             # Save the test events file
@@ -55,7 +57,7 @@ def create_train_test_files(bids_path, preprocessed_path, test_subjects_list=Non
     train_df.to_csv(os.path.join(bids_path, "train_events.csv"), index=False)
     return os.path.join(bids_path, "train_events.csv"), os.path.join(bids_path, "test_events.csv")
 
-def create_train_test_segments_aug(bids_path, preprocessed_path, test_subjects_list=None, test_subject_percentage=0.2, exclude_subjects=None):
+def create_train_test_segments_aug(bids_path, preprocessed_path, test_subjects_list=None, test_subject_percentage=0.2, exclude_subjects=None, meta_tag="meta_files"):
     """
     Create train and test files for the dataset.
     """
@@ -88,6 +90,7 @@ def create_train_test_segments_aug(bids_path, preprocessed_path, test_subjects_l
     train_df = pd.DataFrame()
 
     labels = {"Left": 0, "Right": 1, "left": 0, "right": 1}
+    # labels = {"rest": 0, "task": 1}
 
     train_files =  []
     for train_subject in train_subjects_list:
@@ -116,11 +119,13 @@ def create_train_test_segments_aug(bids_path, preprocessed_path, test_subjects_l
         "trial_type": test_labels})
 
     # Save the test and train DataFrames to CSV files
-    test_df.to_csv(os.path.join(preprocessed_path, "test_segments.csv"), index=False)
-    train_df.to_csv(os.path.join(preprocessed_path, "train_segments.csv"), index=False)
-    return os.path.join(preprocessed_path, "train_segments.csv"), os.path.join(preprocessed_path, "test_segments.csv")
+    meta_dir = os.path.join(preprocessed_path, meta_tag)
+    os.makedirs(meta_dir, exist_ok=True)
+    test_df.to_csv(os.path.join(meta_dir, "test_segments.csv"), index=False)
+    train_df.to_csv(os.path.join(meta_dir, "train_segments.csv"), index=False)
+    return os.path.join(meta_dir, "train_segments.csv"), os.path.join(meta_dir, "test_segments.csv")
 
-def create_train_test_segments(bids_path, preprocessed_path, test_subjects_list=None, test_subject_percentage=0.2, exclude_subjects=None):
+def create_train_test_segments(bids_path, preprocessed_path, test_subjects_list=None, test_subject_percentage=0.2, exclude_subjects=None, meta_tag="meta_files"):
     """
     Create train and test files for the dataset.
     """
@@ -153,7 +158,13 @@ def create_train_test_segments(bids_path, preprocessed_path, test_subjects_list=
     test_df = pd.DataFrame()
     train_df = pd.DataFrame()
 
-    labels = {"Left": 1, "Right": 0, "left": 1, "right": 0}
+    labels = {"Left": 1, "Right": 0,
+              "left": 1, "right": 0,
+              "WordCongruent":1, "WordIncongruent":0,
+              "wordcongruent":1, "wordincongruent":0,
+              "task": 1, "rest": 0,}
+    
+    # labels = {"task": 1, "rest": 0}
 
     train_files =  []
     for train_subject in train_subjects_list:
@@ -184,11 +195,13 @@ def create_train_test_segments(bids_path, preprocessed_path, test_subjects_list=
         "trial_type": test_labels})
 
     # Save the test and train DataFrames to CSV files
-    test_df.to_csv(os.path.join(preprocessed_path, "test_segments.csv"), index=False)
-    train_df.to_csv(os.path.join(preprocessed_path, "train_segments.csv"), index=False)
-    return os.path.join(preprocessed_path, "train_segments.csv"), os.path.join(preprocessed_path, "test_segments.csv")
+    meta_dir = os.path.join(preprocessed_path, meta_tag)
+    os.makedirs(meta_dir, exist_ok=True)
+    test_df.to_csv(os.path.join(meta_dir, "test_segments.csv"), index=False)
+    train_df.to_csv(os.path.join(meta_dir, "train_segments.csv"), index=False)
+    return os.path.join(meta_dir, "train_segments.csv"), os.path.join(meta_dir, "test_segments.csv")
 
-def create_train_test_segments_grad(bids_path, preprocessed_path, test_subjects_list=None, exclude_subjects=None, train_dataset=None, fmri_percentage=0.2, fmri_subjects=24):
+def create_train_test_segments_grad(bids_path, preprocessed_path, test_subjects_list=None, exclude_subjects=None, train_dataset=None, fmri_percentage=0.2, fmri_subjects=24, meta_tag="meta_files"):
     """
     Create train and test files for the dataset.
     """
@@ -245,6 +258,7 @@ def create_train_test_segments_grad(bids_path, preprocessed_path, test_subjects_
     train_df = pd.DataFrame()
 
     labels = {"Left": 0, "Right": 1, "left": 0, "right": 1}
+    # labels = {"rest": 0, "task": 1}
 
     train_files =  []
     for train_subject in train_subjects_list:
@@ -274,9 +288,11 @@ def create_train_test_segments_grad(bids_path, preprocessed_path, test_subjects_
         "trial_type": test_labels})
 
     # Save the test and train DataFrames to CSV files
-    test_df.to_csv(os.path.join(preprocessed_path, "test_segments.csv"), index=False)
-    train_df.to_csv(os.path.join(preprocessed_path, "train_segments.csv"), index=False)
-    return os.path.join(preprocessed_path, "train_segments.csv"), os.path.join(preprocessed_path, "test_segments.csv")
+    meta_dir = os.path.join(preprocessed_path, meta_tag)
+    os.makedirs(meta_dir, exist_ok=True)
+    test_df.to_csv(os.path.join(meta_dir, "test_segments.csv"), index=False)
+    train_df.to_csv(os.path.join(meta_dir, "train_segments.csv"), index=False)
+    return os.path.join(meta_dir, "train_segments.csv"), os.path.join(meta_dir, "test_segments.csv")
 
 
 def create_train_test_segments_wustl(bids_path, preprocessed_path, test_subjects_list=None, test_subject_percentage=0.2, exclude_subjects=None):
