@@ -168,8 +168,8 @@ def create_train_test_segments(bids_path, preprocessed_path, test_subjects_list=
 
     train_files =  []
     for train_subject in train_subjects_list:
-        # train_files += glob.glob(os.path.join(preprocessed_path, train_subject, "**", "*.nc"))
-        train_files += glob.glob(os.path.join(preprocessed_path, train_subject, "**", "*.nc"), recursive=True)
+        # train_files += glob.glob(os.path.join(preprocessed_path, train_subject, "**", "*.nc"), recursive=True)
+        train_files += glob.glob(os.path.join(preprocessed_path, train_subject, "**", "*_test.nc"), recursive=True)
     train_labels = []
     for f in train_files:
         if os.path.basename(f).endswith("_test.nc"):

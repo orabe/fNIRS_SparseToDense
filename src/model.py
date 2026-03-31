@@ -261,10 +261,12 @@ class CNN2DImage(nn.Module):
             # nn.Conv2d(104, 64, kernel_size=(1, 3)), (shakiba's)
             
             # nn.Conv2d(110, 64, kernel_size=(1, 3)), # parcel space
+            # nn.Conv2d(103, 64, kernel_size=(1, 3)), # full parcel space
             # nn.Conv2d(68, 64, kernel_size=(1, 3)), # channel space (FreshMotor)
             # nn.Conv2d(100, 64, kernel_size=(1, 3)), # channel space (BallSqueezingHD)
+            # nn.Conv2d(137, 64, kernel_size=(1, 3)), # parcel space, vfc_hd
             
-            nn.Conv2d(103, 64, kernel_size=(1, 3)), # full parcel space
+            nn.Conv2d(110, 64, kernel_size=(1, 3)), # parcel space, Laura
             
             nn.ReLU(),
             nn.Dropout(0.6),

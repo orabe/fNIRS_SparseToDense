@@ -25,6 +25,11 @@ __pycache__/
 *.pth
 *.m
 *.npz
+*.html
+*.txt
+*.pickle
+*.pdf
+
 
 /results/
 /data/
@@ -32,3 +37,4 @@ __pycache__/
 /figures/
 /plots/
 /models/
+/src/subset/thomas_data/data/

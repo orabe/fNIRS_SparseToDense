@@ -299,12 +299,13 @@ def run_mixed_training():
     #     'sub-17'
     # ]
     
+    # laura_exclude_subjects = ['sub-547', 'sub-549', 'sub-639', 'sub-588']
     laura_multi_sparse_motor_chs_subjects = [
-        'sub-538', 'sub-547', 'sub-568', 'sub-577',
+        'sub-568', 'sub-577',
         'sub-580', 'sub-581', 'sub-583', 'sub-586',
-        'sub-587', 'sub-588', 'sub-592', 'sub-613',
+        'sub-587', 'sub-592', 'sub-613',
         'sub-618', 'sub-619', 'sub-621', 'sub-633',
-        'sub-638', 'sub-639', 'sub-640'
+        'sub-638', 'sub-640',
     ]
 
     # train_datasets_config = {
@@ -367,43 +368,50 @@ def run_mixed_training():
             "root": "datasets/processed/BS_Laura/full",
             "subjects": laura_multi_sparse_motor_chs_subjects,
             "sample_ratio": 1.0,
-            "exclude_subjects": ['sub-538', 'sub-547', 'sub-549', 'sub-639', 'sub-588'],
+            "exclude_subjects": [],
         },
         
-        # "motor_90chs": {
-        #     "root": "datasets/processed/BS_Laura/motor_90chs",
-        #     "subjects": laura_multi_sparse_motor_chs_subjects,
-        #     "sample_ratio": sparse_sample_ratio,
-        #     "exclude_subjects": ['sub-547', 'sub-639', 'sub-588'],
-        # },
+        "motor_100chs": {
+            "root": "datasets/processed/BS_Laura/motor_100chs",
+            "subjects": laura_multi_sparse_motor_chs_subjects,
+            "sample_ratio": sparse_sample_ratio,
+            "exclude_subjects": [],
+        },
         
-        # "motor_80chs": {
-        #     "root": "datasets/processed/BS_Laura/motor_80chs",
-        #     "subjects": laura_multi_sparse_motor_chs_subjects,
-        #     "sample_ratio": sparse_sample_ratio,
-        #     "exclude_subjects": ['sub-547', 'sub-639', 'sub-588'],
-        # }, 
+        "motor_91chs": {
+            "root": "datasets/processed/BS_Laura/motor_91chs",
+            "subjects": laura_multi_sparse_motor_chs_subjects,
+            "sample_ratio": sparse_sample_ratio,
+            "exclude_subjects": [],
+        }, 
          
-        # "motor_70chs": {
-        #     "root": "datasets/processed/BS_Laura/motor_70chs",
-        #     "subjects": laura_multi_sparse_motor_chs_subjects,
-        #     "sample_ratio": sparse_sample_ratio,
-        #     "exclude_subjects": ['sub-547', 'sub-639', 'sub-588'],
-        # },
+        "motor_80chs": {
+            "root": "datasets/processed/BS_Laura/motor_80chs",
+            "subjects": laura_multi_sparse_motor_chs_subjects,
+            "sample_ratio": sparse_sample_ratio,
+            "exclude_subjects": [],
+        },
         
-        # "motor_60chs": {
-        #     "root": "datasets/processed/BS_Laura/motor_60chs",
-        #     "subjects": laura_multi_sparse_motor_chs_subjects,
-        #     "sample_ratio": sparse_sample_ratio,
-        #     "exclude_subjects": ['sub-547', 'sub-639', 'sub-588'],
-        # },
+        "motor_70chs": {
+            "root": "datasets/processed/BS_Laura/motor_70chs",
+            "subjects": laura_multi_sparse_motor_chs_subjects,
+            "sample_ratio": sparse_sample_ratio,
+            "exclude_subjects": [],
+        },
 
-        # "motor_50chs": {
-        #     "root": "datasets/processed/BS_Laura/motor_50chs",
-        #     "subjects": laura_multi_sparse_motor_chs_subjects,
-        #     "sample_ratio": sparse_sample_ratio,
-        #     "exclude_subjects": ['sub-547', 'sub-639', 'sub-588'],
-        # },        
+        "motor_59chs": {
+            "root": "datasets/processed/BS_Laura/motor_59chs",
+            "subjects": laura_multi_sparse_motor_chs_subjects,
+            "sample_ratio": sparse_sample_ratio,
+            "exclude_subjects": [],
+        },   
+        
+        "motor_50chs": {
+            "root": "datasets/processed/BS_Laura/motor_50chs",
+            "subjects": laura_multi_sparse_motor_chs_subjects,
+            "sample_ratio": sparse_sample_ratio,
+            "exclude_subjects": [],
+        },        
         
     }
 
@@ -426,11 +434,11 @@ def run_mixed_training():
         #     "sample_ratio": 1.0,
         #     "exclude_subjects": [],  
         # },
-        "Laura_motor_multi_sparse": {
-            "root": "datasets/processed/BS_Laura/motor_100chs",
+        "laura_full": {
+            "root": "datasets/processed/BS_Laura/full",
             "subjects": laura_multi_sparse_motor_chs_subjects,
             "sample_ratio": 1.0,
-            "exclude_subjects": ['sub-538', 'sub-547', 'sub-549', 'sub-639', 'sub-588'],
+            "exclude_subjects": [],
         },
     }
     fold_dataset_name = list(eval_datasets_config.keys())[0]
@@ -690,6 +698,9 @@ if __name__ == "__main__":
  
     # exclude_subjects = ['sub-547', 'sub-639', 'sub-588', 'sub-171', 'sub-174', 'sub-184']
     # exclude_subjects = ['sub-547', 'sub-639', 'sub-588']
+    
+    exclude_subjects = ['sub-538', 'sub-547', 'sub-549', 'sub-639', 'sub-588'],
+    
     chromo = "HbO"
     for fold in folds:
         subs = "_".join(fold)
@@ -708,7 +719,7 @@ if __name__ == "__main__":
             None,
             preprocessed_path,
             test_subjects_list=fold,
-            exclude_subjects=[] # exclude_subjects
+            exclude_subjects=exclude_subjects
         )
         train_csv = pd.read_csv(train_csv_path)
         test_csv = pd.read_csv(test_csv_path)

@@ -100,8 +100,11 @@ if __name__ == "__main__":
     # preprocessed_path = os.path.join("datasets/processed", DATASET_NAME)
     
     # DATASET_NAME = "fullParcel_FreshMotor"
-    DATASET_NAME = "fullParcel_BallSqueezingHD_modified"
-    preprocessed_path = os.path.join("datasets/full_processed", 'BallSqueezingHD_modified')
+    # DATASET_NAME = "fullParcel_BallSqueezingHD_modified"
+    DATASET_NAME = "vfc_hd"
+    
+    # preprocessed_path = os.path.join("datasets/full_processed", 'BallSqueezingHD_modified')
+    preprocessed_path = os.path.join("datasets/full_processed", 'vfc_hd')
         
     os.makedirs(f"results/{DATASET_NAME}/checkpoints/", exist_ok=True)
         
@@ -120,6 +123,13 @@ if __name__ == "__main__":
         subject_ids = ['sub-01', 'sub-02', 'sub-03', 'sub-04',
                        'sub-05', 'sub-06', 'sub-07', 'sub-08',
                        'sub-09', 'sub-10']
+    elif DATASET_NAME == "vfc_hd":
+        subject_ids = ['sub-01', 'sub-06', 'sub-08', 'sub-09', 
+                        'sub-11', 'sub-12', 'sub-13', 'sub-14',
+                        'sub-15', 'sub-17', 'sub-20', 'sub-22', 
+                        'sub-23', 'sub-24', 'sub-25', 'sub-26',
+                        'sub-27'
+    ]
         
     k = len(subject_ids)  # = 10 FreshMotor, 12 BSQ-HD (LOSO)
 
@@ -207,7 +217,7 @@ if __name__ == "__main__":
                 "test_f1_avg": test_f1_avgs, "test_acc_avg": test_acc_avg,
                 "train_f1": train_f1s, "train_f1_avg": train_f1_avgs, "train_acc_avg": train_acc_avg}
         
-        with open(f"results/{DATASET_NAME}/res_{subs}_{chromo}.pkl", "wb") as f:
+        with open(f"results/{DATASET_NAME}_2/res_{subs}_{chromo}.pkl", "wb") as f:
             pickle.dump(res, f)
 
         torch.save(model.state_dict(), f"results/{DATASET_NAME}/checkpoints/model_{subs}_{chromo}.pth")
