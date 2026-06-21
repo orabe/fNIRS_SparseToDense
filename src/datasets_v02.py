@@ -239,6 +239,26 @@ class fNIRSPreloadDataset(Dataset):
         for i, row in self.data_csv.iterrows():
             if chromo == "both":
                 record = xr.open_dataarray(row["snirf_file"])
+                current_len = record.sizes.get("time", record.shape[-1])
+                target_len = 87
+                if current_len < target_len:
+                    print("Padding trial from length", current_len, "to", target_len)
+                    time_axis = record.get_axis_num("time") if "time" in record.dims else record.ndim - 1
+                    pad_width = [(0, 0)] * record.ndim
+                    pad_width[time_axis] = (0, target_len - current_len)
+                    coords = {
+                        dim: (
+                            np.arange(target_len)
+                            if dim == "time"
+                            else record.coords[dim].values
+                        )
+                        for dim in record.dims
+                    }
+                    record = xr.DataArray(
+                        np.pad(record.values, pad_width, mode="constant", constant_values=0),
+                        dims=record.dims,
+                        coords=coords,
+                    )
                 trial_tensor = torch.tensor(record.values, dtype=torch.float32)
             else:
                 try:

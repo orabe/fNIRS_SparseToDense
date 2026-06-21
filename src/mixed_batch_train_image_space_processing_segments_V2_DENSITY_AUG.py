@@ -254,47 +254,52 @@ def write_csv(df, out_dir, filename):
     return out_path
 
 def run_mixed_training():
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    # dataset_name = "BallSqueezingHD_modified"
-    # dataset_name = "BS_Laura"
-    dataset_name = "vfc_hd"
     num_epochs = 400
     learning_rate = 1e-4
     batch_size = 16
     random_state = 42
-    chromo = "both"
-    USE_CLASS_WEIGHTS= False
-
-    augmentation_strategy = "imageRecon_params"  # "channel_density" or "imageRecon_params"
+    chromo = "HbO"
     sparse_sample_ratio = 1.0       # 0.1, 0.3, 0.5, 0.7, 1.0
+    USE_CLASS_WEIGHTS = False  # Set to False to disable class weights
 
-    # Shared sampling ratio for non-baseline image-recon parameter views.
-    # The baseline view am_1__as_1 is always kept at 1.0.
-    # Must be a float fraction in [0.0, 1.0], e.g. 0.0, 0.1, 0.3, 0.5, 0.7, 1.0.
-    recon_param_aug_sample_ratio = 0.0
+    # Device configuration
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Dataset configuration
+    # ballsqueezing_subjects = [
+    #     'sub-170', 'sub-173', 'sub-171', 'sub-174',
+    #     'sub-176', 'sub-179', 'sub-182', 'sub-177',
+    #     'sub-181', 'sub-183', 'sub-184', 'sub-185'
+    # ]
+    # freshmotor_subjects = [
+    #     'sub-01', 'sub-02', 'sub-03', 'sub-04',
+    #     'sub-05', 'sub-06', 'sub-07', 'sub-08',
+    #     'sub-09', 'sub-10'
+    # ]
+    # bs_laura_subjects = [
+    #     'sub-538', 'sub-580', 'sub-586', 'sub-587',
+    #     'sub-592', 'sub-613', 'sub-618', 'sub-619',
+    #     'sub-621', 'sub-633', 'sub-638', 'sub-639',
+    #     'sub-640'
+    # ]
     
-    if not 0.0 <= recon_param_aug_sample_ratio <= 1.0:
-        raise ValueError("recon_param_aug_sample_ratio must be a float fraction between 0.0 and 1.0")
-
-    recon_param_sample_ratios = {
-        "am_0.1__as_0.1": recon_param_aug_sample_ratio,
-        "am_0.1__as_1": recon_param_aug_sample_ratio,
-        "am_0.1__as_10": recon_param_aug_sample_ratio,
-        "am_1__as_0.1": recon_param_aug_sample_ratio,
-        "am_1__as_1": 1.0,
-        "am_1__as_10": recon_param_aug_sample_ratio,
-        "am_10__as_0.1": recon_param_aug_sample_ratio,
-        "am_10__as_1": recon_param_aug_sample_ratio,
-        "am_10__as_10": recon_param_aug_sample_ratio,
-    }
-
-    ballsqueezing_subjects = [
-        'sub-170', 'sub-173', 'sub-171', 'sub-174',
-        'sub-176', 'sub-179', 'sub-182', 'sub-177',
-        'sub-181', 'sub-183', 'sub-184', 'sub-185',
-    ]
-
+    # vfc_hd_subjects = [
+    #     'sub-01', 'sub-06', 'sub-08', 'sub-09', 
+    #     'sub-11', 'sub-12',  'sub-14', # 'sub-13',
+    #     'sub-15', 'sub-17', 'sub-20', 'sub-22', 
+    #     'sub-23', 'sub-24', 'sub-25', 'sub-26',
+    #     'sub-27'
+    # ]
+    
+    # Anderson_sparse_subjects = [
+    #     'sub-1', 'sub-2', 'sub-3', 'sub-4', 
+    #     'sub-5', 'sub-6', 'sub-7', 'sub-8',
+    #     'sub-9', 'sub-10', 'sub-11', 'sub-12',
+    #     'sub-13', 'sub-14', 'sub-15', 'sub-16',
+    #     'sub-17'
+    # ]
+    
+    # laura_exclude_subjects = ['sub-547', 'sub-549', 'sub-639', 'sub-588']
     laura_multi_sparse_motor_chs_subjects = [
         'sub-568', 'sub-577',
         'sub-580', 'sub-581', 'sub-583', 'sub-586',
@@ -303,157 +308,148 @@ def run_mixed_training():
         'sub-638', 'sub-640',
     ]
 
-    vfc_hd_subjects = [
-        "sub-01", "sub-06", "sub-08", "sub-09",
-        "sub-11", "sub-12", "sub-14", "sub-15",
-        "sub-17", "sub-20", "sub-22", "sub-23",
-        "sub-24", "sub-25", "sub-26", "sub-27",
-    ]
+    # train_datasets_config = {
+    #     # "BallSqueezing_dense": {
+    #     #     "root": "datasets/processed/parcel_BallSqueezingHD_modified",
+    #     #     "subjects": ballsqueezing_subjects,
+    #     #     "exclude_subjects": [],
+    #     #     "sample_ratio": 1.0,
+    #     # },
+    #     "BS_Laura_sparse": {
+    #         "root": "datasets/motor_processed/BS_Laura",
+    #         "subjects": bs_laura_subjects,
+    #         "sample_ratio": 1.0,
+    #         "exclude_subjects": [],
+    #     },        
+    #     # "BS_Laura_sparse": {
+    #     #     "root": "datasets/motor_processed/BS_Laura",
+    #     #     "subjects": bs_laura_subjects,
+    #     #     "sample_ratio": sparse_sample_ratio,
+    #     #     "exclude_subjects": [],
+    #     # },
+    # }
 
-    image_recon_subjects_by_dataset = {
-        "BallSqueezingHD_modified": ballsqueezing_subjects,
-        "BS_Laura": laura_multi_sparse_motor_chs_subjects,
-        "vfc_hd": vfc_hd_subjects,
+    # eval_datasets_config = {
+    #     # "BallSqueezing_dense": {
+    #     #     "root": "datasets/processed/parcel_BallSqueezingHD_modified",
+    #     #     "subjects": ballsqueezing_subjects,
+    #     #     "exclude_subjects": [],
+    #     #     "sample_ratio": 1.0,
+    #     # },
+    #     "BS_Laura_sparse": {
+    #         "root": "datasets/motor_processed/BS_Laura",
+    #         "subjects": bs_laura_subjects,
+    #         "sample_ratio": 1.0,
+    #         "exclude_subjects": [],
+    #     },
+    # }
+
+    train_datasets_config = {
+        # "BallSqueezing_dense": {
+        #     "root": "datasets/processed/parcel_BallSqueezingHD_modified",
+        #     "subjects": ballsqueezing_subjects,
+        #     "exclude_subjects": [],
+        #     "sample_ratio": 1.0,
+        # },
+        # "vfc_hd_dense": {
+        #     "root": "datasets/processed/vfc_hd",
+        #     "subjects": vfc_hd_subjects,
+        #     "sample_ratio": 1.0,
+        #     "exclude_subjects": [],
+        # },     
+        # "Anderson_sparse": {
+        #     "root": "datasets/processed/Anderson_sparse",
+        #     "subjects": Anderson_sparse_subjects,
+        #     "sample_ratio": sparse_sample_ratio,
+        #     "exclude_subjects": [],  
+        # },
+        
+        "full": {
+            "root": "datasets/processed/BS_Laura/full",
+            "subjects": laura_multi_sparse_motor_chs_subjects,
+            "sample_ratio": 1.0,
+            "exclude_subjects": [],
+        },
+        
+        "motor_100chs": {
+            "root": "datasets/processed/BS_Laura/motor_100chs",
+            "subjects": laura_multi_sparse_motor_chs_subjects,
+            "sample_ratio": sparse_sample_ratio,
+            "exclude_subjects": [],
+        },
+        
+        "motor_91chs": {
+            "root": "datasets/processed/BS_Laura/motor_91chs",
+            "subjects": laura_multi_sparse_motor_chs_subjects,
+            "sample_ratio": sparse_sample_ratio,
+            "exclude_subjects": [],
+        }, 
+         
+        "motor_80chs": {
+            "root": "datasets/processed/BS_Laura/motor_80chs",
+            "subjects": laura_multi_sparse_motor_chs_subjects,
+            "sample_ratio": sparse_sample_ratio,
+            "exclude_subjects": [],
+        },
+        
+        "motor_70chs": {
+            "root": "datasets/processed/BS_Laura/motor_70chs",
+            "subjects": laura_multi_sparse_motor_chs_subjects,
+            "sample_ratio": sparse_sample_ratio,
+            "exclude_subjects": [],
+        },
+
+        "motor_59chs": {
+            "root": "datasets/processed/BS_Laura/motor_59chs",
+            "subjects": laura_multi_sparse_motor_chs_subjects,
+            "sample_ratio": sparse_sample_ratio,
+            "exclude_subjects": [],
+        },   
+        
+        "motor_50chs": {
+            "root": "datasets/processed/BS_Laura/motor_50chs",
+            "subjects": laura_multi_sparse_motor_chs_subjects,
+            "sample_ratio": sparse_sample_ratio,
+            "exclude_subjects": [],
+        },        
+        
     }
 
-    def get_image_recon_subjects(dataset_name):
-        if dataset_name not in image_recon_subjects_by_dataset:
-            supported = ", ".join(sorted(image_recon_subjects_by_dataset))
-            raise ValueError(
-                f"No image-recon subject list configured for dataset_name={dataset_name!r}. "
-                f"Supported datasets: {supported}"
-            )
-        return image_recon_subjects_by_dataset[dataset_name]
-
-    recon_param_folders = [
-        "am_0.1__as_0.1",
-        "am_0.1__as_1",
-        "am_0.1__as_10",
-        "am_1__as_0.1",
-        "am_1__as_1",
-        "am_1__as_10",
-        "am_10__as_0.1",
-        "am_10__as_1",
-        "am_10__as_10",
-    ]
-    default_recon_param_folder = "am_1__as_1"
-
-
-    def make_dataset_config(root, subjects, dataset_name, sample_ratio=1.0, exclude_subjects=None):
-        return {
-            "root": root,
-            "subjects": subjects,
-            "dataset_name": dataset_name,
-            "sample_ratio": sample_ratio,
-            "exclude_subjects": exclude_subjects or [],
-        }
-
-
-    if augmentation_strategy == "imageRecon_params":
-        # Train on the 3x3 image-reconstruction parameter grid for the selected dataset.
-        # Test only on the default reconstruction parameters: am_1__as_1.
-        image_recon_subjects = get_image_recon_subjects(dataset_name)
-        base_processed_root = f"datasets/processed/{augmentation_strategy}/{dataset_name}/full"
-        train_datasets_config = {
-            folder: make_dataset_config(
-                os.path.join(base_processed_root, folder),
-                image_recon_subjects,
-                dataset_name,
-                recon_param_sample_ratios[folder],
-            )
-            for folder in recon_param_folders
-        }
-        eval_datasets_config = {
-            default_recon_param_folder: make_dataset_config(
-                os.path.join(base_processed_root, default_recon_param_folder),
-                image_recon_subjects,
-                dataset_name,
-                1.0,
-            )
-        }
-
-    elif augmentation_strategy == "channel_density":
-        # Previous augmentation strategy: pool different BS_Laura channel-density reconstructions.
-        train_datasets_config = {
-            "full": make_dataset_config(
-                "datasets/processed/BS_Laura/full",
-                laura_multi_sparse_motor_chs_subjects,
-                "BS_Laura",
-                1.0,
-            ),
-            "motor_100chs": make_dataset_config(
-                "datasets/processed/BS_Laura/motor_100chs",
-                laura_multi_sparse_motor_chs_subjects,
-                "BS_Laura",
-                sparse_sample_ratio,
-            ),
-            "motor_91chs": make_dataset_config(
-                "datasets/processed/BS_Laura/motor_91chs",
-                laura_multi_sparse_motor_chs_subjects,
-                "BS_Laura",
-                sparse_sample_ratio,
-            ),
-            "motor_80chs": make_dataset_config(
-                "datasets/processed/BS_Laura/motor_80chs",
-                laura_multi_sparse_motor_chs_subjects,
-                "BS_Laura",
-                sparse_sample_ratio,
-            ),
-            "motor_70chs": make_dataset_config(
-                "datasets/processed/BS_Laura/motor_70chs",
-                laura_multi_sparse_motor_chs_subjects,
-                "BS_Laura",
-                sparse_sample_ratio,
-            ),
-            "motor_59chs": make_dataset_config(
-                "datasets/processed/BS_Laura/motor_59chs",
-                laura_multi_sparse_motor_chs_subjects,
-                "BS_Laura",
-                sparse_sample_ratio,
-            ),
-            "motor_50chs": make_dataset_config(
-                "datasets/processed/BS_Laura/motor_50chs",
-                laura_multi_sparse_motor_chs_subjects,
-                "BS_Laura",
-                sparse_sample_ratio,
-            ),
-        }
-        eval_datasets_config = {
-            "laura_full": make_dataset_config(
-                "datasets/processed/BS_Laura/full",
-                laura_multi_sparse_motor_chs_subjects,
-                "BS_Laura",
-                1.0,
-            )
-        }
-
-    else:
-        raise ValueError(f"Unknown augmentation_strategy: {augmentation_strategy}")
-
+    eval_datasets_config = {
+        # "BallSqueezing_dense": {
+        #     "root": "datasets/processed/parcel_BallSqueezingHD_modified",
+        #     "subjects": ballsqueezing_subjects,
+        #     "exclude_subjects": [],
+        #     "sample_ratio": 1.0,
+        # },
+        # "vfc_hd_dense": {
+        #     "root": "datasets/processed/vfc_hd",
+        #     "subjects": vfc_hd_subjects,
+        #     "sample_ratio": 1.0,
+        #     "exclude_subjects": [],
+        # },
+        # "Anderson_sparse": {
+        #     "root": "datasets/processed/Anderson_sparse",
+        #     "subjects": Anderson_sparse_subjects,
+        #     "sample_ratio": 1.0,
+        #     "exclude_subjects": [],  
+        # },
+        "laura_full": {
+            "root": "datasets/processed/BS_Laura/full",
+            "subjects": laura_multi_sparse_motor_chs_subjects,
+            "sample_ratio": 1.0,
+            "exclude_subjects": [],
+        },
+    }
     fold_dataset_name = list(eval_datasets_config.keys())[0]
     subject_ids = eval_datasets_config[fold_dataset_name]["subjects"]
     k = len(subject_ids) # Number of folds
 
     train_names = list(train_datasets_config.keys())
     eval_names = list(eval_datasets_config.keys())
-    if augmentation_strategy == "imageRecon_params":
-        active_train_names = [
-            name for name, cfg in train_datasets_config.items()
-            if cfg.get("sample_ratio", 1.0) > 0
-        ]
-        ratio_tag = f"{recon_param_aug_sample_ratio:.1f}"
-        run_name = f"train_{dataset_name}_imgRecon_{len(active_train_names)}am-as_ratio_{chromo}_{ratio_tag}"
-    else:
-        run_name = f"train_{'+'.join(train_names)}__eval_{'+'.join(eval_names)}_{chromo}"
-
-    unique_dataset_names = sorted(
-        {
-            cfg["dataset_name"]
-            for cfg in list(train_datasets_config.values()) + list(eval_datasets_config.values())
-        }
-    )
-    result_group = f"{augmentation_strategy}__{'+'.join(unique_dataset_names)}"
-    results_dir = os.path.join("results", result_group, run_name)
+    run_name = f"train_{'+'.join(train_names)}__eval_{'+'.join(eval_names)}"
+    # results_dir = f"results/{run_name}_onlyBS_Laura"
+    results_dir = f"results/{run_name}_{sparse_sample_ratio}"
     csv_dir = os.path.join(results_dir, "csv")
     os.makedirs(os.path.join(results_dir, "checkpoints"), exist_ok=True)
 
@@ -478,12 +474,13 @@ def run_mixed_training():
             if ratio <= 0:
                 continue
             meta_tag = f"meta_files_{ratio}"
-            # Exclude the held-out LOSO subject from every training root.
-            # This prevents leakage across augmentation views of the same subject.
-            test_subjects_list = fold
-            logging.info(
-                f"Excluded test subjects for training ({name}): {', '.join(test_subjects_list)}"
-            )
+            test_subjects_list = fold if name == fold_dataset_name else []
+            if test_subjects_list:
+                logging.info(
+                    f"Excluded test subjects for training ({name}): {', '.join(test_subjects_list)}"
+                )
+            else:
+                logging.info(f"Excluded test subjects for training ({name}): none")
             train_csv_path, _ = create_train_test_segments(
                 None,
                 cfg["root"],
@@ -501,7 +498,7 @@ def run_mixed_training():
             if train_df.empty:
                 raise ValueError(f"No training samples found for dataset: {name}")
             train_csv = write_csv(train_df, csv_dir, f"train_{name}_{subs}.csv")
-            train_datasets.append(fNIRSPreloadDataset(train_csv, chromo=chromo))
+            train_datasets.append(fNIRSPreloadDataset(train_csv, chromo='HbO'))
 
         if len(train_datasets) == 1:
             train_dataset = train_datasets[0]
@@ -528,7 +525,7 @@ def run_mixed_training():
             if test_df.empty:
                 raise ValueError(f"No evaluation samples found for dataset: {name}")
             test_csv = write_csv(test_df, csv_dir, f"test_{name}_{subs}.csv")
-            eval_datasets.append(fNIRSPreloadDataset(test_csv, mode="test", chromo=chromo))
+            eval_datasets.append(fNIRSPreloadDataset(test_csv, mode="test", chromo='HbO'))
 
         if len(eval_datasets) == 1:
             test_dataset = eval_datasets[0]
@@ -638,12 +635,7 @@ def run_mixed_training():
         
         print("Model saved successfully!")
     
-    logging.info(f"Training outputs stored in: {results_dir}")
-    logging.info(f"CSV files stored in: {csv_dir}")
-    logging.info(f"Checkpoints stored in: {os.path.join(results_dir, 'checkpoints')}")
-    logging.info(f"Plots stored in: {os.path.join(results_dir, 'plots')}")
     print("\n-----Training complete! -----\n")
-    print(f"Training outputs stored in: {results_dir}")
 
 # Main function
 if __name__ == "__main__":
@@ -670,7 +662,6 @@ if __name__ == "__main__":
     # DATASET_NAME = "fullParcel_FreshMotor"
     DATASET_NAME = "Parcel_BallSqueezingHD_modified"
     preprocessed_path = os.path.join("datasets/processed", 'parcel_BallSqueezingHD_modified')
-
         
     os.makedirs(f"results/{DATASET_NAME}/checkpoints/", exist_ok=True)
 
@@ -710,7 +701,7 @@ if __name__ == "__main__":
     
     exclude_subjects = ['sub-538', 'sub-547', 'sub-549', 'sub-639', 'sub-588'],
     
-    chromo = "both"
+    chromo = "HbO"
     for fold in folds:
         subs = "_".join(fold)
 
@@ -734,9 +725,9 @@ if __name__ == "__main__":
         test_csv = pd.read_csv(test_csv_path)
 
         train_dataset = fNIRSPreloadDataset(
-            train_csv_path, chromo=chromo)
+            train_csv_path, chromo='HbO')
         test_dataset = fNIRSPreloadDataset(
-            test_csv_path, mode="test", chromo=chromo)
+            test_csv_path, mode="test", chromo='HbO')
         
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=True)
         test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=0, pin_memory=True)

@@ -250,22 +250,48 @@ def plot_roc_curves(all_results, output_path):
 
 
 def main():
-    # DATASET_NAME = "fullParcel_FreshMotor"
-    # DATASET_NAME = "train_vfc_hd_dense+Anderson_sparse__eval_vfc_hd_dense_1.0"
-    
-    DATASET_NAME = "train_full__eval_laura_full_1.0"
-    DATASET_NAME = "train_full+motor_100chs+motor_91chs+motor_80chs+motor_70chs+motor_59chs+motor_50chs__eval_laura_full_0.1"
-    DATASET_NAME = "train_full+motor_100chs+motor_91chs+motor_80chs+motor_70chs+motor_59chs+motor_50chs__eval_laura_full_0.3"
-    DATASET_NAME = "train_full+motor_100chs+motor_91chs+motor_80chs+motor_70chs+motor_59chs+motor_50chs__eval_laura_full_0.5"
-    DATASET_NAME = "train_full+motor_100chs+motor_91chs+motor_80chs+motor_70chs+motor_59chs+motor_50chs__eval_laura_full_0.7"
-    DATASET_NAME = "train_full+motor_100chs+motor_91chs+motor_80chs+motor_70chs+motor_59chs+motor_50chs__eval_laura_full_1.0"
+    # Old channel-density augmentation results:
+    # DATASET_NAME = "train_full__eval_laura_full_1.0"
+    # DATASET_NAME = "train_full+motor_100chs+motor_91chs+motor_80chs+motor_70chs+motor_59chs+motor_50chs__eval_laura_full_0.1"
+    # DATASET_NAME = "train_full+motor_100chs+motor_91chs+motor_80chs+motor_70chs+motor_59chs+motor_50chs__eval_laura_full_0.3"
+    # DATASET_NAME = "train_full+motor_100chs+motor_91chs+motor_80chs+motor_70chs+motor_59chs+motor_50chs__eval_laura_full_0.5"
+    # DATASET_NAME = "train_full+motor_100chs+motor_91chs+motor_80chs+motor_70chs+motor_59chs+motor_50chs__eval_laura_full_0.7"
+    # DATASET_NAME = "train_full+motor_100chs+motor_91chs+motor_80chs+motor_70chs+motor_59chs+motor_50chs__eval_laura_full_1.0"
 
+    # New image-reconstruction parameter augmentation results.
+    # dataset_name = "BallSqueezingHD_modified"
+    # dataset_name = "BS_Laura"
+    dataset_name = "vfc_hd"
     
+    chromo_mode = "both"
+    augmentation_strategy = "imageRecon_params" #"imageRecon_params" or "channelDensity_aug"
+    
+    # Must match the training folder convention: 0.0, 0.1, 0.3, 0.5, 0.7, 1.0.
+    recon_param_aug_sample_ratio = 1.0
+    if not 0.0 <= recon_param_aug_sample_ratio <= 1.0:
+        raise ValueError("recon_param_aug_sample_ratio must be a float fraction between 0.0 and 1.0")
+
+    recon_param_sample_ratios = {
+        "am_0.1__as_0.1": recon_param_aug_sample_ratio,
+        "am_0.1__as_1": recon_param_aug_sample_ratio,
+        "am_0.1__as_10": recon_param_aug_sample_ratio,
+        "am_1__as_0.1": recon_param_aug_sample_ratio,
+        "am_1__as_1": 1.0,
+        "am_1__as_10": recon_param_aug_sample_ratio,
+        "am_10__as_0.1": recon_param_aug_sample_ratio,
+        "am_10__as_1": recon_param_aug_sample_ratio,
+        "am_10__as_10": recon_param_aug_sample_ratio,
+    }
+    active_views = [name for name, ratio in recon_param_sample_ratios.items() if ratio > 0]
+    ratio_tag = f"{recon_param_aug_sample_ratio:.1f}"
+    result_group = f"{augmentation_strategy}__{dataset_name}"
+    DATASET_NAME = f"train_{dataset_name}_imgRecon_{len(active_views)}am-as_ratio_{chromo_mode}_{ratio_tag}"
+
     result_patterns = [
         # "results/*/res_*.pkl",
-        f"results/{DATASET_NAME}/res_*.pkl",
+        f"results/{result_group}/{DATASET_NAME}/res_*.pkl",
     ]
-    output_dir = f"figures/{DATASET_NAME}"
+    output_dir = f"figures/{result_group}/{DATASET_NAME}"
     os.makedirs(output_dir, exist_ok=True)
 
     result_files = []
