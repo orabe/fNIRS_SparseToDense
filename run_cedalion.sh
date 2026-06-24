@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=cedalion_gpu
-#SBATCH --partition=gpu-2d
+#SBATCH --partition=gpu-5h
 #SBATCH --gres=gpu:1
 #SBATCH --gpus-per-node=1
 #SBATCH --mem=128G
@@ -9,7 +9,7 @@
 #SBATCH --output=/home/orabe/fNIRS_sparseToDense/logs/cedalion_jobs_output-%j.out
 
 # run script with apptainer
-apptainer run --nv --bind `pwd`/xkb:/var/lib/xkb,`pwd`/cedalion:/app /home/orabe/fNIRS_sparseToDense/cedalion_20251207.sif jupyter notebook --ip 0.0.0.0 --no-browser
+apptainer run --nv --bind `pwd`/xkb:/var/lib/xkb,`pwd`/cedalion:/app /home/orabe/containers/cedalion_20251207.sif jupyter notebook --ip 0.0.0.0 --no-browser
 
 # apptainer exec --nv /home/space/ibs/datasets/cedalion.sif bash
 
