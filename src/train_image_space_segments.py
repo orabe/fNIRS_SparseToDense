@@ -157,19 +157,16 @@ if __name__ == "__main__":
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(device)
 
-        train_csv_path, test_csv_path = create_train_test_segments(
+        train_df, test_df = create_train_test_segments(
             None,
             preprocessed_path,
             test_subjects_list=fold,
             exclude_subjects=exclude_subjects
         )
-        train_csv = pd.read_csv(train_csv_path)
-        test_csv = pd.read_csv(test_csv_path)
-
         train_dataset = fNIRSPreloadDataset(
-            train_csv_path, chromo='HbO')
+            train_df, chromo='HbO')
         test_dataset = fNIRSPreloadDataset(
-            test_csv_path, mode="test", chromo='HbO')
+            test_df, mode="test", chromo='HbO')
         
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=True)
         test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=0, pin_memory=True)

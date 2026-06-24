@@ -5,6 +5,7 @@ import pickle
 import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.metrics import f1_score, roc_curve, auc
+from online_augmentations import ONLINE_AUGMENTATIONS
 
 
 def subject_label_from_path(path):
@@ -264,7 +265,29 @@ def main():
     dataset_name = "vfc_hd"
     
     chromo_mode = "both"
-    augmentation_strategy = "imageRecon_params" #"imageRecon_params" or "channelDensity_aug"
+    augmentation_strategy = "online_eeg_aug"  # "imageRecon_params", "channelDensity_aug", or "online_eeg_aug"
+    online_data_space = "channel"  # "channel" or "parcel"
+    
+    # ONLINE_AUGMENTATION_GROUPS = {
+    #     "time_domain": [
+    #         "gaussian_noise",
+    #         "smooth_time_mask",
+    #         "time_reverse", # in progress
+    #         "sign_flip", # in progress
+    #     ],
+    #     "frequency_domain": [
+    #         "ft_surrogate", # in progress
+    #         "frequency_shift",
+    #         "bandstop_filter",
+    #     ],
+    #     "spatial_domain": [
+    #         "space_symmetry",
+    #         "space_dropout",
+    #         "space_shuffle",
+    #     ],
+    # }
+    
+    online_aug_name = "space_shuffle"
     
     # Must match the training folder convention: 0.0, 0.1, 0.3, 0.5, 0.7, 1.0.
     recon_param_aug_sample_ratio = 1.0
@@ -282,10 +305,16 @@ def main():
         "am_10__as_1": recon_param_aug_sample_ratio,
         "am_10__as_10": recon_param_aug_sample_ratio,
     }
-    active_views = [name for name, ratio in recon_param_sample_ratios.items() if ratio > 0]
-    ratio_tag = f"{recon_param_aug_sample_ratio:.1f}"
-    result_group = f"{augmentation_strategy}__{dataset_name}"
-    DATASET_NAME = f"train_{dataset_name}_imgRecon_{len(active_views)}am-as_ratio_{chromo_mode}_{ratio_tag}"
+    if augmentation_strategy == "online_eeg_aug":
+        if online_aug_name not in ONLINE_AUGMENTATIONS:
+            raise ValueError(f"Unknown online_aug_name: {online_aug_name}")
+        result_group = f"online_eeg_aug__{online_data_space}__{dataset_name}"
+        DATASET_NAME = f"train_{dataset_name}_{online_data_space}_{online_aug_name}_{chromo_mode}"
+    else:
+        active_views = [name for name, ratio in recon_param_sample_ratios.items() if ratio > 0]
+        ratio_tag = f"{recon_param_aug_sample_ratio:.1f}"
+        result_group = f"{augmentation_strategy}__{dataset_name}"
+        DATASET_NAME = f"train_{dataset_name}_imgRecon_{len(active_views)}am-as_ratio_{chromo_mode}_{ratio_tag}"
 
     result_patterns = [
         # "results/*/res_*.pkl",

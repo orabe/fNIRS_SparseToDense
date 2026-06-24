@@ -8,14 +8,15 @@ from statistics import mean, pstdev
 
 from scipy.cluster.hierarchy import leaves_list, linkage
 from scipy.stats import ttest_rel
+from online_augmentations import ONLINE_AUGMENTATIONS
 
 
 RESULTS_ROOT = "results"
-EXPORT_STRATEGY = "img_recon"  # "img_recon" or "sparse_dense"
+EXPORT_STRATEGY = "online_eeg_aug"  # "img_recon", "sparse_dense", or "online_eeg_aug"
 
 DATASET_NAME = "vfc_hd"
-DATASET_NAME = "BS_Laura"
-DATASET_NAME = "BallSqueezingHD_modified"
+# DATASET_NAME = "BallSqueezingHD_modified"
+# DATASET_NAME = "BS_Laura"
 
 CHROMO_MODE = "both"
 IMG_RECON_RESULT_GROUP = f"imageRecon_params__{DATASET_NAME}"
@@ -57,6 +58,15 @@ SPARSE_DENSE_DATASET_CONFIGS = [
 # The baseline am_1__as_1 view is always included; ratio controls the other 8 views.
 IMG_RECON_AUG_RATIOS = [0.0, 0.1, 0.3, 0.5, 0.7, 1.0]
 
+ONLINE_DATA_SPACE = "channel"  # "channel" or "parcel"
+ONLINE_EEG_RESULT_GROUP = f"online_eeg_aug__{ONLINE_DATA_SPACE}__{DATASET_NAME}"
+ONLINE_EEG_RESULTS_ROOT = os.path.join(RESULTS_ROOT, ONLINE_EEG_RESULT_GROUP)
+ONLINE_EEG_EXPORT_DIR = os.path.join(
+    ONLINE_EEG_RESULTS_ROOT,
+    f"{DATASET_NAME}_{ONLINE_DATA_SPACE}_{CHROMO_MODE}_analysis",
+)
+ONLINE_EEG_AUGMENTATIONS = ONLINE_AUGMENTATIONS
+
 
 def result_name_for_img_recon_ratio(ratio):
     active_views = 9 if ratio > 0 else 1
@@ -66,6 +76,10 @@ def result_name_for_img_recon_ratio(ratio):
 
 def format_ratio_label(ratio):
     return f"{ratio * 100:g}%"
+
+
+def result_name_for_online_eeg_aug(aug_name):
+    return f"train_{DATASET_NAME}_{ONLINE_DATA_SPACE}_{aug_name}_{CHROMO_MODE}"
 
 
 def collect_final_metric_values(results_root, dataset_name, metric_key):
@@ -120,6 +134,14 @@ def write_markdown(path, rows, headers):
             handle.write("| " + " | ".join(row[h] for h in headers) + " |\n")
 
 
+def _row_variant_label(row):
+    if "Image-Recon Aug Ratio" in row:
+        return row["Image-Recon Aug Ratio"], "image-recon augmentation ratio"
+    if "Augmentation" in row:
+        return row["Augmentation"], "augmentation"
+    raise KeyError("Expected either 'Image-Recon Aug Ratio' or 'Augmentation' column.")
+
+
 def write_subject_gain_heatmap(path, subject_rows, gain_column="Subject Gain", metric_label="F1"):
     if not subject_rows:
         return False
@@ -137,8 +159,9 @@ def write_subject_gain_heatmap(path, subject_rows, gain_column="Subject Gain", m
     gains = {}
     ratios = []
     subjects = []
+    y_axis_label = None
     for row in subject_rows:
-        ratio = row["Image-Recon Aug Ratio"]
+        ratio, y_axis_label = _row_variant_label(row)
         subject = row["Subject"]
         gain = float(row[gain_column].split()[0])
         gains[(ratio, subject)] = gain
@@ -185,7 +208,7 @@ def write_subject_gain_heatmap(path, subject_rows, gain_column="Subject Gain", m
     ax.set_xticklabels(columns, rotation=45, ha="right")
     ax.set_yticklabels(ratios)
     ax.set_xlabel("held-out subject")
-    ax.set_ylabel("image-recon augmentation ratio")
+    ax.set_ylabel(y_axis_label)
     ax.set_title(f"{DATASET_NAME}: subject-wise {metric_label} gain vs baseline")
 
     for row_idx in range(len(ratios)):
@@ -233,8 +256,9 @@ def write_subject_performance_heatmap(path, performance_rows, score_column="Test
     scores = {}
     ratios = []
     subjects = []
+    y_axis_label = None
     for row in performance_rows:
-        ratio = row["Image-Recon Aug Ratio"]
+        ratio, y_axis_label = _row_variant_label(row)
         subject = row["Subject"]
         score = float(row[score_column])
         scores[(ratio, subject)] = score
@@ -277,7 +301,7 @@ def write_subject_performance_heatmap(path, performance_rows, score_column="Test
     ax.set_xticklabels(columns, rotation=45, ha="right")
     ax.set_yticklabels(ratios)
     ax.set_xlabel("held-out subject")
-    ax.set_ylabel("image-recon augmentation ratio")
+    ax.set_ylabel(y_axis_label)
     ax.set_title(f"{DATASET_NAME}: subject-wise test {metric_label}")
 
     for row_idx in range(len(ratios)):
@@ -314,8 +338,22 @@ def write_best_aug_vs_baseline_bar_chart(
     metric_key="f1",
     metric_label="F1",
 ):
-    baseline_items = [item for item in summary if item["ratio"] == 0.0]
-    aug_items = [item for item in summary if item["ratio"] > 0.0]
+    if not summary:
+        return False
+
+    if "ratio" in summary[0]:
+        baseline_items = [item for item in summary if item["ratio"] == 0.0]
+        aug_items = [item for item in summary if item["ratio"] > 0.0]
+        baseline_label = "baseline\n0%"
+        best_label = lambda item: f"best augmentation\n{format_ratio_label(item['ratio'])}"
+    elif "aug_name" in summary[0]:
+        baseline_items = [item for item in summary if item["aug_name"] == "none"]
+        aug_items = [item for item in summary if item["aug_name"] != "none"]
+        baseline_label = "baseline\nnone"
+        best_label = lambda item: f"best augmentation\n{item['aug_name']}"
+    else:
+        return False
+
     mean_key = f"{metric_key}_mean"
     std_key = f"{metric_key}_std"
     aug_items = [item for item in aug_items if item.get(mean_key) is not None]
@@ -336,8 +374,8 @@ def write_best_aug_vs_baseline_bar_chart(
     best_item = max(aug_items, key=lambda item: item[mean_key])
 
     labels = [
-        "baseline\n0%",
-        f"best augmentation\n{format_ratio_label(best_item['ratio'])}",
+        baseline_label,
+        best_label(best_item),
     ]
     means = [baseline_item[mean_key], best_item[mean_key]]
     stds = [baseline_item[std_key], best_item[std_key]]
@@ -644,6 +682,170 @@ def build_sparse_dense_rows(results_root):
     return rows, headers, "results/laura_sparse_dense_summary_table"
 
 
+def build_online_eeg_aug_rows(results_root):
+    summary = []
+    for aug_name in ONLINE_EEG_AUGMENTATIONS:
+        run_name = result_name_for_online_eeg_aug(aug_name)
+        f1_by_subject = collect_final_metric_by_subject(results_root, run_name, "test_f1_micro")
+        auc_by_subject = collect_final_metric_by_subject(results_root, run_name, "test_auroc")
+        f1_values = list(f1_by_subject.values())
+        auc_values = list(auc_by_subject.values())
+
+        if not f1_values:
+            print(f"Skipping missing result folder or empty metrics: {run_name}")
+            continue
+
+        f1_mean, f1_std, f1_text = format_mean_std(f1_values)
+        auc_mean, auc_std, auc_text = format_mean_std(auc_values) if auc_values else (None, None, "n/a")
+        summary.append(
+            {
+                "aug_name": aug_name,
+                "f1_mean": f1_mean,
+                "f1_std": f1_std,
+                "f1_text": f1_text,
+                "f1_by_subject": f1_by_subject,
+                "auc_mean": auc_mean,
+                "auc_std": auc_std,
+                "auc_text": auc_text,
+                "auc_by_subject": auc_by_subject,
+            }
+        )
+
+    if not summary:
+        raise RuntimeError("No result metrics found for any configured online EEG augmentation run.")
+
+    baseline_item = next((item for item in summary if item["aug_name"] == "none"), summary[0])
+    baseline_by_subject = baseline_item["f1_by_subject"]
+    baseline_auc_by_subject = baseline_item["auc_by_subject"]
+
+    rows = []
+    subject_rows = []
+    performance_rows = []
+    for item in summary:
+        for subject, f1_value in sorted(item["f1_by_subject"].items()):
+            auc_value = item["auc_by_subject"].get(subject)
+            performance_rows.append(
+                {
+                    "Augmentation": item["aug_name"],
+                    "Subject": subject,
+                    "Test F1": f"{f1_value:.3f}",
+                    "Test AUROC": f"{auc_value:.3f}" if auc_value is not None else "n/a",
+                }
+            )
+
+        if item["aug_name"] == baseline_item["aug_name"]:
+            paired_n = "reference"
+            paired_gain = "reference"
+            paired_t = "reference"
+            paired_p = "reference"
+            paired_auc_gain = "reference"
+            paired_auc_t = "reference"
+            paired_auc_p = "reference"
+        else:
+            paired_subjects = sorted(set(baseline_by_subject) & set(item["f1_by_subject"]))
+            baseline_values = [baseline_by_subject[subject] for subject in paired_subjects]
+            augmented_values = [item["f1_by_subject"][subject] for subject in paired_subjects]
+            gains = [augmented - baseline for augmented, baseline in zip(augmented_values, baseline_values)]
+
+            paired_n = str(len(paired_subjects))
+            paired_gain = f"{mean(gains):+.3f} ({mean(gains) * 100:+.1f}%)" if gains else "n/a"
+            if len(gains) >= 2:
+                t_stat, p_value = ttest_rel(augmented_values, baseline_values)
+                paired_t = f"{t_stat:.3f}"
+                paired_p = f"{p_value:.4f}"
+            else:
+                paired_t = "n/a"
+                paired_p = "n/a"
+
+            paired_auc_subjects = sorted(set(baseline_auc_by_subject) & set(item["auc_by_subject"]))
+            baseline_auc_values = [baseline_auc_by_subject[subject] for subject in paired_auc_subjects]
+            augmented_auc_values = [item["auc_by_subject"][subject] for subject in paired_auc_subjects]
+            auc_gains = [augmented - baseline for augmented, baseline in zip(augmented_auc_values, baseline_auc_values)]
+            paired_auc_gain = f"{mean(auc_gains):+.3f} ({mean(auc_gains) * 100:+.1f}%)" if auc_gains else "n/a"
+            if len(auc_gains) >= 2:
+                auc_t_stat, auc_p_value = ttest_rel(augmented_auc_values, baseline_auc_values)
+                paired_auc_t = f"{auc_t_stat:.3f}"
+                paired_auc_p = f"{auc_p_value:.4f}"
+            else:
+                paired_auc_t = "n/a"
+                paired_auc_p = "n/a"
+
+            for subject, baseline_value, augmented_value, subject_gain in zip(
+                paired_subjects, baseline_values, augmented_values, gains
+            ):
+                baseline_auc = baseline_auc_by_subject.get(subject)
+                augmented_auc = item["auc_by_subject"].get(subject)
+                subject_auc_gain = (
+                    augmented_auc - baseline_auc
+                    if baseline_auc is not None and augmented_auc is not None
+                    else None
+                )
+                subject_rows.append(
+                    {
+                        "Augmentation": item["aug_name"],
+                        "Subject": subject,
+                        "Baseline F1": f"{baseline_value:.3f}",
+                        "Augmented F1": f"{augmented_value:.3f}",
+                        "Subject Gain": f"{subject_gain:+.3f} ({subject_gain * 100:+.1f}%)",
+                        "Baseline AUROC": f"{baseline_auc:.3f}" if baseline_auc is not None else "n/a",
+                        "Augmented AUROC": f"{augmented_auc:.3f}" if augmented_auc is not None else "n/a",
+                        "Subject AUROC Gain": (
+                            f"{subject_auc_gain:+.3f} ({subject_auc_gain * 100:+.1f}%)"
+                            if subject_auc_gain is not None
+                            else "n/a"
+                        ),
+                    }
+                )
+
+        rows.append(
+            {
+                "Augmentation": item["aug_name"],
+                "Test F1 (mean ± std)": item["f1_text"],
+                "Test AUROC (mean ± std)": item["auc_text"],
+                "Paired Subjects": paired_n,
+                "Mean Paired F1 Gain Across Subjects": paired_gain,
+                "Mean Paired AUROC Gain Across Subjects": paired_auc_gain,
+                "Paired F1 t-statistic": paired_t,
+                "Paired F1 t-test p-value": paired_p,
+                "Paired AUROC t-statistic": paired_auc_t,
+                "Paired AUROC t-test p-value": paired_auc_p,
+            }
+        )
+
+    headers = [
+        "Augmentation",
+        "Test F1 (mean ± std)",
+        "Test AUROC (mean ± std)",
+        "Paired Subjects",
+        "Mean Paired F1 Gain Across Subjects",
+        "Mean Paired AUROC Gain Across Subjects",
+        "Paired F1 t-statistic",
+        "Paired F1 t-test p-value",
+        "Paired AUROC t-statistic",
+        "Paired AUROC t-test p-value",
+    ]
+    subject_headers = [
+        "Augmentation",
+        "Subject",
+        "Baseline F1",
+        "Augmented F1",
+        "Subject Gain",
+        "Baseline AUROC",
+        "Augmented AUROC",
+        "Subject AUROC Gain",
+    ]
+    return (
+        rows,
+        headers,
+        os.path.join(ONLINE_EEG_EXPORT_DIR, "summary_table"),
+        subject_rows,
+        subject_headers,
+        os.path.join(ONLINE_EEG_EXPORT_DIR, "subjectwise_gains"),
+        performance_rows,
+        summary,
+    )
+
+
 def main():
     if EXPORT_STRATEGY == "img_recon":
         (
@@ -656,6 +858,7 @@ def main():
             performance_rows,
             img_recon_summary,
         ) = build_img_recon_rows(IMG_RECON_RESULTS_ROOT)
+        analysis_dir = IMG_RECON_EXPORT_DIR
     elif EXPORT_STRATEGY == "sparse_dense":
         rows, headers, output_prefix = build_sparse_dense_rows(RESULTS_ROOT)
         subject_rows = []
@@ -663,6 +866,19 @@ def main():
         subject_output_prefix = None
         performance_rows = []
         img_recon_summary = []
+        analysis_dir = os.path.dirname(output_prefix)
+    elif EXPORT_STRATEGY == "online_eeg_aug":
+        (
+            rows,
+            headers,
+            output_prefix,
+            subject_rows,
+            subject_headers,
+            subject_output_prefix,
+            performance_rows,
+            img_recon_summary,
+        ) = build_online_eeg_aug_rows(ONLINE_EEG_RESULTS_ROOT)
+        analysis_dir = ONLINE_EEG_EXPORT_DIR
     else:
         raise ValueError(f"Unknown EXPORT_STRATEGY: {EXPORT_STRATEGY}")
 
@@ -684,7 +900,7 @@ def main():
         subject_md_path = subject_output_prefix + ".md"
         write_csv(subject_csv_path, subject_rows, subject_headers)
         write_markdown(subject_md_path, subject_rows, subject_headers)
-        heatmap_path = os.path.join(IMG_RECON_EXPORT_DIR, "subjectwise_gain_heatmap.png")
+        heatmap_path = os.path.join(analysis_dir, "subjectwise_gain_heatmap.png")
         heatmap_written = write_subject_gain_heatmap(
             heatmap_path,
             subject_rows,
@@ -696,9 +912,7 @@ def main():
         if heatmap_written:
             print(f"Saved subject-wise gain heatmap to {heatmap_path}")
 
-        performance_heatmap_path = os.path.join(
-            IMG_RECON_EXPORT_DIR, "subjectwise_f1_heatmap.png"
-        )
+        performance_heatmap_path = os.path.join(analysis_dir, "subjectwise_f1_heatmap.png")
         performance_heatmap_written = write_subject_performance_heatmap(
             performance_heatmap_path,
             performance_rows,
@@ -708,9 +922,7 @@ def main():
         if performance_heatmap_written:
             print(f"Saved subject-wise F1 heatmap to {performance_heatmap_path}")
 
-        auc_gain_heatmap_path = os.path.join(
-            IMG_RECON_EXPORT_DIR, "subjectwise_auc_gain_heatmap.png"
-        )
+        auc_gain_heatmap_path = os.path.join(analysis_dir, "subjectwise_auc_gain_heatmap.png")
         auc_gain_heatmap_written = write_subject_gain_heatmap(
             auc_gain_heatmap_path,
             subject_rows,
@@ -720,9 +932,7 @@ def main():
         if auc_gain_heatmap_written:
             print(f"Saved subject-wise AUROC gain heatmap to {auc_gain_heatmap_path}")
 
-        auc_performance_heatmap_path = os.path.join(
-            IMG_RECON_EXPORT_DIR, "subjectwise_auc_heatmap.png"
-        )
+        auc_performance_heatmap_path = os.path.join(analysis_dir, "subjectwise_auc_heatmap.png")
         auc_performance_heatmap_written = write_subject_performance_heatmap(
             auc_performance_heatmap_path,
             performance_rows,
@@ -732,9 +942,7 @@ def main():
         if auc_performance_heatmap_written:
             print(f"Saved subject-wise AUROC heatmap to {auc_performance_heatmap_path}")
 
-        f1_bar_chart_path = os.path.join(
-            IMG_RECON_EXPORT_DIR, "best_aug_vs_baseline_f1_bar.png"
-        )
+        f1_bar_chart_path = os.path.join(analysis_dir, "best_aug_vs_baseline_f1_bar.png")
         f1_bar_chart_written = write_best_aug_vs_baseline_bar_chart(
             f1_bar_chart_path,
             img_recon_summary,
@@ -744,9 +952,7 @@ def main():
         if f1_bar_chart_written:
             print(f"Saved best-ratio F1 bar chart to {f1_bar_chart_path}")
 
-        auc_bar_chart_path = os.path.join(
-            IMG_RECON_EXPORT_DIR, "best_aug_vs_baseline_auc_bar.png"
-        )
+        auc_bar_chart_path = os.path.join(analysis_dir, "best_aug_vs_baseline_auc_bar.png")
         auc_bar_chart_written = write_best_aug_vs_baseline_bar_chart(
             auc_bar_chart_path,
             img_recon_summary,

@@ -4,6 +4,11 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from torch.utils.data import Dataset
+from online_augmentations import (
+    ONLINE_AUGMENTATION_GROUPS,
+    ONLINE_AUGMENTATIONS,
+    apply_augmentation,
+)
 
 
 class PreprocessedNIRSDataset(Dataset):
@@ -225,10 +230,25 @@ class fNIRSChannelSpaceSegmentLoad(Dataset):
 
 
 class fNIRSPreloadDataset(Dataset):
-    def __init__(self, data_csv_path, mode="train", chromo="HbO"):
-        self.data_csv = pd.read_csv(data_csv_path)
+    def __init__(
+        self,
+        data_csv_path,
+        mode="train",
+        chromo="HbO",
+        aug_name="none",
+        aug_params=None,
+        seed=42,
+    ):
+        self.data_csv = (
+            data_csv_path.reset_index(drop=True).copy()
+            if isinstance(data_csv_path, pd.DataFrame)
+            else pd.read_csv(data_csv_path)
+        )
         self.mode = mode
         self.chromo = chromo
+        self.aug_name = aug_name
+        self.aug_params = aug_params or {}
+        self.rng = np.random.default_rng(seed)
 
         # === Pre-load all trials into RAM ===
         self.all_trials = []
@@ -261,28 +281,22 @@ class fNIRSPreloadDataset(Dataset):
                     )
                 trial_tensor = torch.tensor(record.values, dtype=torch.float32)
             else:
-                try:
-                    record = xr.open_dataarray(row["snirf_file"]).sel(chromo=chromo)
-                    current_len = record.shape[1]
-                    target_len = 87
+                record = xr.open_dataarray(row["snirf_file"]).sel(chromo=chromo)
+                current_len = record.shape[1]
+                target_len = 87
 
-                    # only pad if shorter than target
-                    if current_len < target_len:
-                        print("Padding trial from length", current_len, "to", target_len)
-                        pad_width = [(0, 0), (0, target_len - current_len)]
-                        record = xr.DataArray(
-                            np.pad(record.values, pad_width, mode='constant', constant_values=0),
-                            dims=record.dims,
-                            coords={
-                                record.dims[0]: record.coords[record.dims[0]].values,
-                                record.dims[1]: np.arange(target_len)
-                            }
-                        )
-                    trial_tensor = torch.tensor(record.values, dtype=torch.float32).unsqueeze(1)
-
-                except Exception as e:
-                    print(f"Error loading {row['snirf_file']}: {e}")
-                    continue
+                if current_len < target_len:
+                    print("Padding trial from length", current_len, "to", target_len)
+                    pad_width = [(0, 0), (0, target_len - current_len)]
+                    record = xr.DataArray(
+                        np.pad(record.values, pad_width, mode='constant', constant_values=0),
+                        dims=record.dims,
+                        coords={
+                            record.dims[0]: record.coords[record.dims[0]].values,
+                            record.dims[1]: np.arange(target_len)
+                        }
+                    )
+                trial_tensor = torch.tensor(record.values, dtype=torch.float32).unsqueeze(1)
             label_tensor = torch.tensor(int(row["trial_type"]), dtype=torch.long)
 
             self.all_trials.append(trial_tensor)
@@ -294,4 +308,12 @@ class fNIRSPreloadDataset(Dataset):
         return len(self.all_trials)
 
     def __getitem__(self, idx):
-        return self.all_trials[idx], self.all_labels[idx]
+        trial = self.all_trials[idx]
+        if self.mode == "train":
+            trial = apply_augmentation(
+                trial,
+                self.aug_name,
+                self.aug_params,
+                self.rng,
+            )
+        return trial, self.all_labels[idx]

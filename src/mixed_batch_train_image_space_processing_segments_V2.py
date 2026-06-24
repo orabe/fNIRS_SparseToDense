@@ -1,6 +1,7 @@
 from torch.utils.data import DataLoader, ConcatDataset
 import pickle
 from datasets_v02 import fNIRSChannelSpaceSegmentLoad, fNIRSPreloadDataset
+from online_augmentations import ONLINE_AUGMENTATION_GROUPS, ONLINE_AUGMENTATIONS
 import torch
 import os
 import torch.nn as nn
@@ -265,6 +266,10 @@ def run_mixed_training():
     random_state = 42
     chromo = "both"
     USE_CLASS_WEIGHTS= False
+    experiment_mode = "online_eeg_aug"  # "legacy" or "online_eeg_aug"
+    representation = "channel"  # "channel" or "parcel"
+    online_aug_name = "space_shuffle"
+    online_aug_params = {"aug_prob": 0.5, "drop_prob": 0.1}
 
     augmentation_strategy = "imageRecon_params"  # "channel_density" or "imageRecon_params"
     sparse_sample_ratio = 1.0       # 0.1, 0.3, 0.5, 0.7, 1.0
@@ -315,6 +320,16 @@ def run_mixed_training():
         "BS_Laura": laura_multi_sparse_motor_chs_subjects,
         "vfc_hd": vfc_hd_subjects,
     }
+    online_data_roots = {
+        "channel": {
+            "BS_Laura": "datasets/processed/channel_space/BS_Laura/full",
+            "vfc_hd": "datasets/processed/channel_space/vfc_hd/full",
+        },
+        "parcel": {
+            "BS_Laura": "datasets/processed/imageRecon_params/BS_Laura/full/am_1__as_1",
+            "vfc_hd": "datasets/processed/imageRecon_params/vfc_hd/full/am_1__as_1",
+        },
+    }
 
     def get_image_recon_subjects(dataset_name):
         if dataset_name not in image_recon_subjects_by_dataset:
@@ -349,7 +364,26 @@ def run_mixed_training():
         }
 
 
-    if augmentation_strategy == "imageRecon_params":
+    if experiment_mode == "online_eeg_aug":
+        online_subjects = get_image_recon_subjects(dataset_name)
+        online_root = online_data_roots[representation][dataset_name]
+        train_datasets_config = {
+            f"{representation}_online": make_dataset_config(
+                online_root,
+                online_subjects,
+                dataset_name,
+                1.0,
+            )
+        }
+        eval_datasets_config = {
+            f"{representation}_online": make_dataset_config(
+                online_root,
+                online_subjects,
+                dataset_name,
+                1.0,
+            )
+        }
+    elif augmentation_strategy == "imageRecon_params":
         # Train on the 3x3 image-reconstruction parameter grid for the selected dataset.
         # Test only on the default reconstruction parameters: am_1__as_1.
         image_recon_subjects = get_image_recon_subjects(dataset_name)
@@ -436,7 +470,9 @@ def run_mixed_training():
 
     train_names = list(train_datasets_config.keys())
     eval_names = list(eval_datasets_config.keys())
-    if augmentation_strategy == "imageRecon_params":
+    if experiment_mode == "online_eeg_aug":
+        run_name = f"train_{dataset_name}_{representation}_{online_aug_name}_{chromo}"
+    elif augmentation_strategy == "imageRecon_params":
         active_train_names = [
             name for name, cfg in train_datasets_config.items()
             if cfg.get("sample_ratio", 1.0) > 0
@@ -452,7 +488,10 @@ def run_mixed_training():
             for cfg in list(train_datasets_config.values()) + list(eval_datasets_config.values())
         }
     )
-    result_group = f"{augmentation_strategy}__{'+'.join(unique_dataset_names)}"
+    if experiment_mode == "online_eeg_aug":
+        result_group = f"online_eeg_aug__{representation}__{'+'.join(unique_dataset_names)}"
+    else:
+        result_group = f"{augmentation_strategy}__{'+'.join(unique_dataset_names)}"
     results_dir = os.path.join("results", result_group, run_name)
     csv_dir = os.path.join(results_dir, "csv")
     os.makedirs(os.path.join(results_dir, "checkpoints"), exist_ok=True)
@@ -465,9 +504,21 @@ def run_mixed_training():
     folds = np.array_split(shuffled_subjects, k)
     folds = [list(fold) for fold in folds]
 
+    logging.info(
+        f"Experiment mode={experiment_mode}, representation={representation}, "
+        f"online_aug_name={online_aug_name}, online_aug_params={online_aug_params}"
+    )
+    logging.info(f"Available online augmentations: {', '.join(ONLINE_AUGMENTATIONS)}")
+    logging.info(
+        "Online augmentation groups: "
+        + "; ".join(
+            f"{group}=[{', '.join(methods)}]"
+            for group, methods in ONLINE_AUGMENTATION_GROUPS.items()
+        )
+    )
+
     for fold_idx, fold in enumerate(folds):
         subs = "_".join(fold)
-
         # Device configuration
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(device)
@@ -477,21 +528,18 @@ def run_mixed_training():
             ratio = cfg.get("sample_ratio", 1.0)
             if ratio <= 0:
                 continue
-            meta_tag = f"meta_files_{ratio}"
             # Exclude the held-out LOSO subject from every training root.
             # This prevents leakage across augmentation views of the same subject.
             test_subjects_list = fold
             logging.info(
                 f"Excluded test subjects for training ({name}): {', '.join(test_subjects_list)}"
             )
-            train_csv_path, _ = create_train_test_segments(
+            train_df, _ = create_train_test_segments(
                 None,
                 cfg["root"],
                 test_subjects_list=test_subjects_list,
                 exclude_subjects=cfg.get("exclude_subjects", []),
-                meta_tag=meta_tag,
             )
-            train_df = pd.read_csv(train_csv_path)
             train_df = filter_df_by_subjects(train_df, cfg.get("subjects"))
             train_df = sample_sparse_by_subject(
                 train_df,
@@ -501,7 +549,15 @@ def run_mixed_training():
             if train_df.empty:
                 raise ValueError(f"No training samples found for dataset: {name}")
             train_csv = write_csv(train_df, csv_dir, f"train_{name}_{subs}.csv")
-            train_datasets.append(fNIRSPreloadDataset(train_csv, chromo=chromo))
+            train_datasets.append(
+                fNIRSPreloadDataset(
+                    train_csv,
+                    chromo=chromo,
+                    aug_name=online_aug_name if experiment_mode == "online_eeg_aug" else "none",
+                    aug_params=online_aug_params if experiment_mode == "online_eeg_aug" else None,
+                    seed=random_state + fold_idx,
+                )
+            )
 
         if len(train_datasets) == 1:
             train_dataset = train_datasets[0]
@@ -511,24 +567,30 @@ def run_mixed_training():
         eval_datasets = []
         for name, cfg in eval_datasets_config.items():
             ratio = cfg.get("sample_ratio", 1.0)
-            meta_tag = f"meta_files_{ratio}"
             if name == fold_dataset_name:
                 test_subjects_list = fold
             else:
                 test_subjects_list = cfg.get("subjects", [])
-            _, test_csv_path = create_train_test_segments(
+            _, test_df = create_train_test_segments(
                 None,
                 cfg["root"],
                 test_subjects_list=test_subjects_list,
                 exclude_subjects=cfg.get("exclude_subjects", []),
-                meta_tag=meta_tag,
             )
-            test_df = pd.read_csv(test_csv_path)
             test_df = filter_df_by_subjects(test_df, cfg.get("subjects"))
             if test_df.empty:
                 raise ValueError(f"No evaluation samples found for dataset: {name}")
             test_csv = write_csv(test_df, csv_dir, f"test_{name}_{subs}.csv")
-            eval_datasets.append(fNIRSPreloadDataset(test_csv, mode="test", chromo=chromo))
+            eval_datasets.append(
+                fNIRSPreloadDataset(
+                    test_csv,
+                    mode="test",
+                    chromo=chromo,
+                    aug_name="none",
+                    aug_params=None,
+                    seed=random_state + fold_idx,
+                )
+            )
 
         if len(eval_datasets) == 1:
             test_dataset = eval_datasets[0]
@@ -724,19 +786,16 @@ if __name__ == "__main__":
             )
         else:
             logging.info(f"Excluded test subjects for training ({DATASET_NAME}): none")
-        train_csv_path, test_csv_path = create_train_test_segments(
+        train_df, test_df = create_train_test_segments(
             None,
             preprocessed_path,
             test_subjects_list=fold,
             exclude_subjects=exclude_subjects
         )
-        train_csv = pd.read_csv(train_csv_path)
-        test_csv = pd.read_csv(test_csv_path)
-
         train_dataset = fNIRSPreloadDataset(
-            train_csv_path, chromo=chromo)
+            train_df, chromo=chromo)
         test_dataset = fNIRSPreloadDataset(
-            test_csv_path, mode="test", chromo=chromo)
+            test_df, mode="test", chromo=chromo)
         
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=True)
         test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=0, pin_memory=True)

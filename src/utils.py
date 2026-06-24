@@ -125,9 +125,12 @@ def create_train_test_segments_aug(bids_path, preprocessed_path, test_subjects_l
     train_df.to_csv(os.path.join(meta_dir, "train_segments.csv"), index=False)
     return os.path.join(meta_dir, "train_segments.csv"), os.path.join(meta_dir, "test_segments.csv")
 
-def create_train_test_segments(bids_path, preprocessed_path, test_subjects_list=None, test_subject_percentage=0.2, exclude_subjects=None, meta_tag="meta_files"):
+def create_train_test_segments(bids_path, preprocessed_path, test_subjects_list=None, test_subject_percentage=0.2, exclude_subjects=None):
     """
-    Create train and test files for the dataset.
+    Build train and test segment manifests without writing intermediate CSV files.
+
+    The caller owns experiment-specific filtering, sampling, and final CSV
+    persistence.
     """
     # Load the participants.tsv file
     if bids_path is not None:
@@ -194,12 +197,7 @@ def create_train_test_segments(bids_path, preprocessed_path, test_subjects_list=
         "snirf_file": test_files,
         "trial_type": test_labels})
 
-    # Save the test and train DataFrames to CSV files
-    meta_dir = os.path.join(preprocessed_path, meta_tag)
-    os.makedirs(meta_dir, exist_ok=True)
-    test_df.to_csv(os.path.join(meta_dir, "test_segments.csv"), index=False)
-    train_df.to_csv(os.path.join(meta_dir, "train_segments.csv"), index=False)
-    return os.path.join(meta_dir, "train_segments.csv"), os.path.join(meta_dir, "test_segments.csv")
+    return train_df, test_df
 
 def create_train_test_segments_grad(bids_path, preprocessed_path, test_subjects_list=None, exclude_subjects=None, train_dataset=None, fmri_percentage=0.2, fmri_subjects=24, meta_tag="meta_files"):
     """

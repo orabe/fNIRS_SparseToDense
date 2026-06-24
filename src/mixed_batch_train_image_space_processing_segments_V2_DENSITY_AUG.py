@@ -473,7 +473,6 @@ def run_mixed_training():
             ratio = cfg.get("sample_ratio", 1.0)
             if ratio <= 0:
                 continue
-            meta_tag = f"meta_files_{ratio}"
             test_subjects_list = fold if name == fold_dataset_name else []
             if test_subjects_list:
                 logging.info(
@@ -481,14 +480,12 @@ def run_mixed_training():
                 )
             else:
                 logging.info(f"Excluded test subjects for training ({name}): none")
-            train_csv_path, _ = create_train_test_segments(
+            train_df, _ = create_train_test_segments(
                 None,
                 cfg["root"],
                 test_subjects_list=test_subjects_list,
                 exclude_subjects=cfg.get("exclude_subjects", []),
-                meta_tag=meta_tag,
             )
-            train_df = pd.read_csv(train_csv_path)
             train_df = filter_df_by_subjects(train_df, cfg.get("subjects"))
             train_df = sample_sparse_by_subject(
                 train_df,
@@ -508,19 +505,16 @@ def run_mixed_training():
         eval_datasets = []
         for name, cfg in eval_datasets_config.items():
             ratio = cfg.get("sample_ratio", 1.0)
-            meta_tag = f"meta_files_{ratio}"
             if name == fold_dataset_name:
                 test_subjects_list = fold
             else:
                 test_subjects_list = cfg.get("subjects", [])
-            _, test_csv_path = create_train_test_segments(
+            _, test_df = create_train_test_segments(
                 None,
                 cfg["root"],
                 test_subjects_list=test_subjects_list,
                 exclude_subjects=cfg.get("exclude_subjects", []),
-                meta_tag=meta_tag,
             )
-            test_df = pd.read_csv(test_csv_path)
             test_df = filter_df_by_subjects(test_df, cfg.get("subjects"))
             if test_df.empty:
                 raise ValueError(f"No evaluation samples found for dataset: {name}")
@@ -715,19 +709,16 @@ if __name__ == "__main__":
             )
         else:
             logging.info(f"Excluded test subjects for training ({DATASET_NAME}): none")
-        train_csv_path, test_csv_path = create_train_test_segments(
+        train_df, test_df = create_train_test_segments(
             None,
             preprocessed_path,
             test_subjects_list=fold,
             exclude_subjects=exclude_subjects
         )
-        train_csv = pd.read_csv(train_csv_path)
-        test_csv = pd.read_csv(test_csv_path)
-
         train_dataset = fNIRSPreloadDataset(
-            train_csv_path, chromo='HbO')
+            train_df, chromo='HbO')
         test_dataset = fNIRSPreloadDataset(
-            test_csv_path, mode="test", chromo='HbO')
+            test_df, mode="test", chromo='HbO')
         
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=True)
         test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=0, pin_memory=True)

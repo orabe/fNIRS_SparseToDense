@@ -267,9 +267,12 @@ class CNN2DImage(nn.Module):
             
             # nn.Conv2d(137, 64, kernel_size=(1, 3)), # parcel space, old vfc_hd
             
-            nn.Conv2d(143, 64, kernel_size=(1, 3)), # parcel space, old vfc_hd
+            # nn.Conv2d(143, 64, kernel_size=(1, 3)), # parcel space, old vfc_hd
+            
+            # nn.Conv2d(1220, 64, kernel_size=(1, 3)), # full channel space, laura (100% sure)
             # nn.Conv2d(110, 64, kernel_size=(1, 3)), # parcel space, Laura
             
+            nn.Conv2d(214, 64, kernel_size=(1, 3)), # full channel space, vfc (100% sure)
             nn.ReLU(),
             nn.Dropout(0.6),
             nn.InstanceNorm2d(64),
