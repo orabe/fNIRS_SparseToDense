@@ -4,11 +4,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from torch.utils.data import Dataset
-from online_augmentations import (
-    ONLINE_AUGMENTATION_GROUPS,
-    ONLINE_AUGMENTATIONS,
-    apply_augmentation,
-)
+from online_augmentations import apply_augmentation
 
 
 class PreprocessedNIRSDataset(Dataset):
@@ -247,7 +243,7 @@ class fNIRSPreloadDataset(Dataset):
         self.mode = mode
         self.chromo = chromo
         self.aug_name = aug_name
-        self.aug_params = aug_params or {}
+        self.aug_params = aug_params
         self.rng = np.random.default_rng(seed)
 
         # === Pre-load all trials into RAM ===
@@ -256,47 +252,21 @@ class fNIRSPreloadDataset(Dataset):
 
         print(f"Preloading {len(self.data_csv)} trials into memory...")
 
+        expected_shape = None
         for i, row in self.data_csv.iterrows():
             if chromo == "both":
                 record = xr.open_dataarray(row["snirf_file"])
-                current_len = record.sizes.get("time", record.shape[-1])
-                target_len = 87
-                if current_len < target_len:
-                    print("Padding trial from length", current_len, "to", target_len)
-                    time_axis = record.get_axis_num("time") if "time" in record.dims else record.ndim - 1
-                    pad_width = [(0, 0)] * record.ndim
-                    pad_width[time_axis] = (0, target_len - current_len)
-                    coords = {
-                        dim: (
-                            np.arange(target_len)
-                            if dim == "time"
-                            else record.coords[dim].values
-                        )
-                        for dim in record.dims
-                    }
-                    record = xr.DataArray(
-                        np.pad(record.values, pad_width, mode="constant", constant_values=0),
-                        dims=record.dims,
-                        coords=coords,
-                    )
                 trial_tensor = torch.tensor(record.values, dtype=torch.float32)
             else:
                 record = xr.open_dataarray(row["snirf_file"]).sel(chromo=chromo)
-                current_len = record.shape[1]
-                target_len = 87
-
-                if current_len < target_len:
-                    print("Padding trial from length", current_len, "to", target_len)
-                    pad_width = [(0, 0), (0, target_len - current_len)]
-                    record = xr.DataArray(
-                        np.pad(record.values, pad_width, mode='constant', constant_values=0),
-                        dims=record.dims,
-                        coords={
-                            record.dims[0]: record.coords[record.dims[0]].values,
-                            record.dims[1]: np.arange(target_len)
-                        }
-                    )
                 trial_tensor = torch.tensor(record.values, dtype=torch.float32).unsqueeze(1)
+            if expected_shape is None:
+                expected_shape = tuple(trial_tensor.shape)
+            elif tuple(trial_tensor.shape) != expected_shape:
+                raise ValueError(
+                    f"Trial {row['snirf_file']} has shape {tuple(trial_tensor.shape)}; "
+                    f"expected {expected_shape}"
+                )
             label_tensor = torch.tensor(int(row["trial_type"]), dtype=torch.long)
 
             self.all_trials.append(trial_tensor)

@@ -323,10 +323,12 @@ def run_mixed_training():
     online_data_roots = {
         "channel": {
             "BS_Laura": "datasets/processed/channel_space/BS_Laura/full",
+            "BallSqueezingHD_modified": "datasets/processed/channel_space/BallSqueezingHD_modified/full",
             "vfc_hd": "datasets/processed/channel_space/vfc_hd/full",
         },
         "parcel": {
             "BS_Laura": "datasets/processed/imageRecon_params/BS_Laura/full/am_1__as_1",
+            "BallSqueezingHD_modified": "datasets/processed/imageRecon_params/BallSqueezingHD_modified/full/am_1__as_1",
             "vfc_hd": "datasets/processed/imageRecon_params/vfc_hd/full/am_1__as_1",
         },
     }

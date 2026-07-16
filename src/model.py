@@ -254,25 +254,11 @@ class CNN2DChannelV2(nn.Module):
 
 
 class CNN2DImage(nn.Module):
-    def __init__(self):
+    def __init__(self, input_channels):
         super().__init__()
 
         self.feature_extractor = nn.Sequential(
-            # nn.Conv2d(104, 64, kernel_size=(1, 3)), (shakiba's)
-            
-            # nn.Conv2d(110, 64, kernel_size=(1, 3)), # parcel space
-            # nn.Conv2d(103, 64, kernel_size=(1, 3)), # full parcel space
-            # nn.Conv2d(68, 64, kernel_size=(1, 3)), # channel space (FreshMotor)
-            # nn.Conv2d(100, 64, kernel_size=(1, 3)), # channel space (BallSqueezingHD)
-            
-            # nn.Conv2d(137, 64, kernel_size=(1, 3)), # parcel space, old vfc_hd
-            
-            # nn.Conv2d(143, 64, kernel_size=(1, 3)), # parcel space, old vfc_hd
-            
-            # nn.Conv2d(1220, 64, kernel_size=(1, 3)), # full channel space, laura (100% sure)
-            # nn.Conv2d(110, 64, kernel_size=(1, 3)), # parcel space, Laura
-            
-            nn.Conv2d(214, 64, kernel_size=(1, 3)), # full channel space, vfc (100% sure)
+            nn.Conv2d(input_channels, 64, kernel_size=(1, 3)),
             nn.ReLU(),
             nn.Dropout(0.6),
             nn.InstanceNorm2d(64),
@@ -289,26 +275,17 @@ class CNN2DImage(nn.Module):
             nn.MaxPool2d(kernel_size=(1, 3)),
         )
 
-        # Don't define Linear layers yet
-        self.classifier = None
+        self.classifier = nn.Sequential(
+            nn.Flatten(start_dim=1),
+            nn.Dropout(0.5),
+            nn.LazyLinear(64),
+            nn.ReLU(),
+            nn.Dropout(0.5),
+            nn.Linear(64, 2)
+        )
 
     def forward(self, x):
         x = self.feature_extractor(x)
-
-        if self.classifier is None:
-            # First pass — define classifier based on actual input
-            flattened_size = x.view(x.size(0), -1).size(1)
-            self.classifier = nn.Sequential(
-                nn.Flatten(start_dim=1),
-                nn.Dropout(0.5),
-                nn.Linear(flattened_size, 64),
-                nn.ReLU(),
-                nn.Dropout(0.5),
-                nn.Linear(64, 2)
-            )
-            # Move to same device as input
-            self.classifier.to(x.device)
-
         x = self.classifier(x)
         return x
 
@@ -546,4 +523,3 @@ class BoldT(nn.Module):
         # Classification
         x = self.dropout(x)
         return self.classification(x)
-
