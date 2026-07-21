@@ -5,7 +5,25 @@ import pickle
 import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.metrics import f1_score, roc_curve, auc
-from online_augmentations import ONLINE_AUGMENTATIONS
+
+
+CONFIG = {
+    "results_root": "results",
+    "run_strategy": "online_eeg_aug",  # "base", "imageRecon_params", "channel_density", or "online_eeg_aug"
+    "dataset_name": "BallSqueezingHD_modified", # BS_Laura, BallSqueezingHD_modified, vfc_hd, Anderson_sparse
+    "subset_name": "full",
+    "representation": "channel",  # "parcel" or "channel"
+    "image_recon": {
+        "sample_ratio": 1.0,
+    },
+    "online_eeg_aug": {
+        "aug_name": "none",
+    },
+    "channel_density": {
+        "source_dataset_name": "none",
+        "sample_ratio": 0.0,
+    },
+}
 
 
 def subject_label_from_path(path):
@@ -16,6 +34,58 @@ def subject_label_from_path(path):
     if subject_parts:
         return "_".join(subject_parts)
     return stem
+
+
+def run_dir_for_current_config():
+    if CONFIG["run_strategy"] == "base":
+        return os.path.join(
+            CONFIG["results_root"],
+            "base",
+            f"target_{CONFIG['dataset_name']}",
+            CONFIG["subset_name"],
+            f"{CONFIG['representation']}_space",
+        )
+    if CONFIG["run_strategy"] == "imageRecon_params":
+        return os.path.join(
+            CONFIG["results_root"],
+            "imageRecon_params",
+            f"target_{CONFIG['dataset_name']}",
+            "parcel_space",
+            f"ratio_{CONFIG['image_recon']['sample_ratio']:.1f}",
+        )
+    if CONFIG["run_strategy"] == "online_eeg_aug":
+        return os.path.join(
+            CONFIG["results_root"],
+            "online_eeg_aug",
+            f"target_{CONFIG['dataset_name']}",
+            CONFIG["subset_name"],
+            f"{CONFIG['representation']}_space",
+            CONFIG["online_eeg_aug"]["aug_name"],
+        )
+    if CONFIG["run_strategy"] == "channel_density":
+        sample_ratio = CONFIG["channel_density"]["sample_ratio"]
+        source_name = "none" if sample_ratio == 0 else CONFIG["channel_density"]["source_dataset_name"]
+        return os.path.join(
+            CONFIG["results_root"],
+            "channel_density",
+            f"target_{CONFIG['dataset_name']}",
+            f"source_{source_name}",
+            "parcel_space",
+            f"ratio_{sample_ratio:.1f}",
+        )
+    raise ValueError(f"Unknown run_strategy: {CONFIG['run_strategy']}")
+
+
+def output_dir_for_current_config():
+    return os.path.join(run_dir_for_current_config(), "analysis")
+
+
+def experiment_label():
+    representation = CONFIG["representation"]
+    if CONFIG["run_strategy"] in ["imageRecon_params", "channel_density"]:
+        representation = "parcel"
+    return f"{CONFIG['dataset_name']} | {representation} space | {CONFIG['run_strategy']}"
+
 
 def plot_metric(all_results, metric_name, train_key, test_key, output_path=None, show=False):
     n_subjects = len(all_results)
@@ -51,7 +121,11 @@ def plot_metric(all_results, metric_name, train_key, test_key, output_path=None,
         c = idx % cols
         axes[r][c].axis("off")
 
-    fig.suptitle(metric_name.capitalize(), fontsize=14, fontweight="bold")
+    fig.suptitle(
+        f"{experiment_label()} | {metric_name.capitalize()}",
+        fontsize=14,
+        fontweight="bold",
+    )
     fig.tight_layout()
 
     if output_path:
@@ -148,7 +222,11 @@ def plot_f1_vs_threshold(all_results, output_path, thresholds=None):
     
     ax.set_xlabel('Classification Threshold', fontsize=12)
     ax.set_ylabel('F1 Score (Micro)', fontsize=12)
-    ax.set_title('F1 Score vs Classification Threshold', fontsize=14, fontweight='bold')
+    ax.set_title(
+        f"{experiment_label()} | F1 Score vs Classification Threshold",
+        fontsize=14,
+        fontweight='bold',
+    )
     ax.grid(True, linestyle=':', linewidth=0.6, alpha=0.7)
     ax.set_xlim([0, 1])
     ax.set_ylim([0, 1])
@@ -235,7 +313,11 @@ def plot_roc_curves(all_results, output_path):
     ax.set_ylim([0.0, 1.05])
     ax.set_xlabel('False Positive Rate', fontsize=12)
     ax.set_ylabel('True Positive Rate', fontsize=12)
-    ax.set_title('ROC Curves - All Subjects', fontsize=14, fontweight='bold')
+    ax.set_title(
+        f"{experiment_label()} | ROC Curves - All Subjects",
+        fontsize=14,
+        fontweight='bold',
+    )
     ax.grid(True, linestyle=':', linewidth=0.6, alpha=0.7)
     
     # Legend outside plot area
@@ -250,85 +332,76 @@ def plot_roc_curves(all_results, output_path):
         print(f"Mean AUC: {mean_auc:.3f} ± {std_auc:.3f}")
 
 
+def plot_final_mean_std_bar(all_results, metric_label, train_key, test_key, output_path):
+    train_final = []
+    test_final = []
+    for _, results in all_results:
+        train_values = results.get(train_key, [])
+        test_values = results.get(test_key, [])
+        if train_values:
+            train_final.append(train_values[-1])
+        if test_values:
+            test_final.append(test_values[-1])
+
+    if not train_final or not test_final:
+        return
+
+    train_mean = float(sum(train_final) / len(train_final))
+    test_mean = float(sum(test_final) / len(test_final))
+    train_std = float((sum((x - train_mean) ** 2 for x in train_final) / len(train_final)) ** 0.5)
+    test_std = float((sum((x - test_mean) ** 2 for x in test_final) / len(test_final)) ** 0.5)
+
+    fig, ax = plt.subplots(figsize=(4, 4))
+    ax.bar(
+        ["Train", "Test"],
+        [train_mean, test_mean],
+        yerr=[train_std, test_std],
+        capsize=5,
+        color=["tab:blue", "tab:orange"],
+    )
+    ax.text(
+        0,
+        train_mean / 2,
+        f"{train_mean:.3f} ± {train_std:.3f}",
+        ha="center",
+        va="center",
+        rotation=90,
+        color="white",
+        fontsize=9,
+    )
+    ax.text(
+        1,
+        test_mean / 2,
+        f"{test_mean:.3f} ± {test_std:.3f}",
+        ha="center",
+        va="center",
+        rotation=90,
+        color="white",
+        fontsize=9,
+    )
+    ax.set_title(
+        f"{experiment_label()} | Final {metric_label} Mean ± Std",
+        fontsize=7,
+        fontweight="bold",
+    )
+    ax.set_ylabel(metric_label)
+    ax.grid(True, axis="y", linestyle=":", linewidth=0.6, alpha=0.7)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=300)
+    plt.close(fig)
+
+
 def main():
-    # Old channel-density augmentation results:
-    # DATASET_NAME = "train_full__eval_laura_full_1.0"
-    # DATASET_NAME = "train_full+motor_100chs+motor_91chs+motor_80chs+motor_70chs+motor_59chs+motor_50chs__eval_laura_full_0.1"
-    # DATASET_NAME = "train_full+motor_100chs+motor_91chs+motor_80chs+motor_70chs+motor_59chs+motor_50chs__eval_laura_full_0.3"
-    # DATASET_NAME = "train_full+motor_100chs+motor_91chs+motor_80chs+motor_70chs+motor_59chs+motor_50chs__eval_laura_full_0.5"
-    # DATASET_NAME = "train_full+motor_100chs+motor_91chs+motor_80chs+motor_70chs+motor_59chs+motor_50chs__eval_laura_full_0.7"
-    # DATASET_NAME = "train_full+motor_100chs+motor_91chs+motor_80chs+motor_70chs+motor_59chs+motor_50chs__eval_laura_full_1.0"
-
-    # New image-reconstruction parameter augmentation results.
-    # dataset_name = "BallSqueezingHD_modified"
-    # dataset_name = "BS_Laura"
-    dataset_name = "vfc_hd"
-    
-    chromo_mode = "both"
-    augmentation_strategy = "online_eeg_aug"  # "imageRecon_params", "channelDensity_aug", or "online_eeg_aug"
-    online_data_space = "channel"  # "channel" or "parcel"
-    
-    # ONLINE_AUGMENTATION_GROUPS = {
-    #     "time_domain": [
-    #         "gaussian_noise",
-    #         "smooth_time_mask",
-    #         "time_reverse", # in progress
-    #         "sign_flip", # in progress
-    #     ],
-    #     "frequency_domain": [
-    #         "ft_surrogate", # in progress
-    #         "frequency_shift",
-    #         "bandstop_filter",
-    #     ],
-    #     "spatial_domain": [
-    #         "space_symmetry",
-    #         "space_dropout",
-    #         "space_shuffle",
-    #     ],
-    # }
-    
-    online_aug_name = "space_shuffle"
-    
-    # Must match the training folder convention: 0.0, 0.1, 0.3, 0.5, 0.7, 1.0.
-    recon_param_aug_sample_ratio = 1.0
-    if not 0.0 <= recon_param_aug_sample_ratio <= 1.0:
-        raise ValueError("recon_param_aug_sample_ratio must be a float fraction between 0.0 and 1.0")
-
-    recon_param_sample_ratios = {
-        "am_0.1__as_0.1": recon_param_aug_sample_ratio,
-        "am_0.1__as_1": recon_param_aug_sample_ratio,
-        "am_0.1__as_10": recon_param_aug_sample_ratio,
-        "am_1__as_0.1": recon_param_aug_sample_ratio,
-        "am_1__as_1": 1.0,
-        "am_1__as_10": recon_param_aug_sample_ratio,
-        "am_10__as_0.1": recon_param_aug_sample_ratio,
-        "am_10__as_1": recon_param_aug_sample_ratio,
-        "am_10__as_10": recon_param_aug_sample_ratio,
-    }
-    if augmentation_strategy == "online_eeg_aug":
-        if online_aug_name not in ONLINE_AUGMENTATIONS:
-            raise ValueError(f"Unknown online_aug_name: {online_aug_name}")
-        result_group = f"online_eeg_aug__{online_data_space}__{dataset_name}"
-        DATASET_NAME = f"train_{dataset_name}_{online_data_space}_{online_aug_name}_{chromo_mode}"
-    else:
-        active_views = [name for name, ratio in recon_param_sample_ratios.items() if ratio > 0]
-        ratio_tag = f"{recon_param_aug_sample_ratio:.1f}"
-        result_group = f"{augmentation_strategy}__{dataset_name}"
-        DATASET_NAME = f"train_{dataset_name}_imgRecon_{len(active_views)}am-as_ratio_{chromo_mode}_{ratio_tag}"
-
-    result_patterns = [
-        # "results/*/res_*.pkl",
-        f"results/{result_group}/{DATASET_NAME}/res_*.pkl",
-    ]
-    output_dir = f"figures/{result_group}/{DATASET_NAME}"
+    run_dir = run_dir_for_current_config()
+    output_dir = output_dir_for_current_config()
     os.makedirs(output_dir, exist_ok=True)
 
-    result_files = []
-    for pattern in result_patterns:
-        result_files.extend(glob.glob(pattern))
+    result_files = sorted(glob.glob(os.path.join(run_dir, "metrics", "res_*.pkl")))
+    if not result_files:
+        raise RuntimeError(f"No metric pickle files found in: {os.path.join(run_dir, 'metrics')}")
 
     all_results = []
-    for path in sorted(result_files):
+    for path in result_files:
         with open(path, "rb") as handle:
             results = pickle.load(handle)
         label = subject_label_from_path(path)
@@ -355,57 +428,20 @@ def main():
             show=False,
         )
 
-    train_f1_final = []
-    test_f1_final = []
-    for _, results in all_results:
-        train_f1 = results.get("train_f1_micro", [])
-        test_f1 = results.get("test_f1_micro", [])
-        if train_f1:
-            train_f1_final.append(train_f1[-1])
-        if test_f1:
-            test_f1_final.append(test_f1[-1])
-
-    if train_f1_final and test_f1_final:
-        train_mean = float(sum(train_f1_final) / len(train_f1_final))
-        test_mean = float(sum(test_f1_final) / len(test_f1_final))
-
-        train_std = float((sum((x - train_mean) ** 2 for x in train_f1_final) / len(train_f1_final)) ** 0.5)
-        test_std = float((sum((x - test_mean) ** 2 for x in test_f1_final) / len(test_f1_final)) ** 0.5)
-
-        fig, ax = plt.subplots(figsize=(4, 4))
-        ax.bar(
-            ["Train", "Test"],
-            [train_mean, test_mean],
-            yerr=[train_std, test_std],
-            capsize=5,
-            color=["tab:blue", "tab:orange"],
-        )
-        ax.text(
-            0,
-            train_mean / 2,
-            f"{train_mean:.3f} ± {train_std:.3f}",
-            ha="center",
-            va="center",
-            rotation=90,
-            color="white",
-            fontsize=9,
-        )
-        ax.text(
-            1,
-            test_mean / 2,
-            f"{test_mean:.3f} ± {test_std:.3f}",
-            ha="center",
-            va="center",
-            rotation=90,
-            color="white",
-            fontsize=9,
-        )
-        ax.set_title("Final F1 Micro Mean ± Std", fontsize=13, fontweight="bold")
-        ax.set_ylabel("F1 Micro")
-        ax.grid(True, axis="y", linestyle=":", linewidth=0.6, alpha=0.7)
-        fig.tight_layout()
-        fig.savefig(os.path.join(output_dir, "f1_mean_std_bar.png"), dpi=300)
-        plt.close(fig)
+    plot_final_mean_std_bar(
+        all_results,
+        "F1 Macro",
+        "train_f1_macro",
+        "test_f1_macro",
+        os.path.join(output_dir, "f1_macro_mean_std_bar.png"),
+    )
+    plot_final_mean_std_bar(
+        all_results,
+        "AUROC",
+        "train_auroc",
+        "test_auroc",
+        os.path.join(output_dir, "auroc_mean_std_bar.png"),
+    )
 
     # Plot F1 vs threshold
     f1_threshold_path = os.path.join(output_dir, "f1_vs_threshold.png")
