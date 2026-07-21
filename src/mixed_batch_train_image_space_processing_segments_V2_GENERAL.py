@@ -559,6 +559,9 @@ def run_mixed_training(run_strategy, config, train_params):
     k = len(subject_ids) # Number of folds
 
     csv_dir = os.path.join(results_dir, "csv")
+    metrics_dir = os.path.join(results_dir, "metrics")
+    os.makedirs(csv_dir, exist_ok=True)
+    os.makedirs(metrics_dir, exist_ok=True)
     os.makedirs(os.path.join(results_dir, "checkpoints"), exist_ok=True)
 
     # Shuffle the subject list
@@ -745,7 +748,7 @@ def run_mixed_training(run_strategy, config, train_params):
             "final_test_probs": final_test_metrics['all_probs']
         }
         
-        with open(f"{results_dir}/res_{subs}_{chromo}.pkl", "wb") as f:
+        with open(os.path.join(metrics_dir, f"res_{subs}_{chromo}.pkl"), "wb") as f:
             pickle.dump(res, f)
 
         torch.save(model.state_dict(), f"{results_dir}/checkpoints/model_{subs}_{chromo}.pth")
@@ -754,6 +757,7 @@ def run_mixed_training(run_strategy, config, train_params):
     
     logging.info(f"Training outputs stored in: {results_dir}")
     logging.info(f"CSV files stored in: {csv_dir}")
+    logging.info(f"Metric files stored in: {metrics_dir}")
     logging.info(f"Checkpoints stored in: {os.path.join(results_dir, 'checkpoints')}")
     logging.info(f"Plots stored in: {os.path.join(results_dir, 'plots')}")
     print("\n-----Training complete! -----\n")
@@ -769,14 +773,14 @@ def main():
         "use_class_weights": False,
     }
 
-    run_strategy = "base"  # "base", "channel_density", "imageRecon_params", or "online_eeg_aug"
+    run_strategy = "online_eeg_aug"  # "base", "channel_density", "imageRecon_params", or "online_eeg_aug"
     config = {
         
-        "target_dataset_name": "BS_Laura",
+        "target_dataset_name": "Anderson_sparse", # "BS_Laura", "BallSqueezingHD_modified", "vfc_hd", or "Anderson_sparse"
         
         "base": {
             "subset_name": "full",
-            "representation": "parcel",
+            "representation": "channel", # "parcel" or "channel"
         },
         "channel_density": {
             "source_dataset_name": "BS_Laura",
@@ -790,9 +794,22 @@ def main():
         },
         "online_eeg_aug": {
             "subset_name": "full",
-            "representation": "channel",
+            "representation": "parcel", # "parcel" or "channel"
             "online_aug_name": "space_shuffle",
             "online_aug_params": ONLINE_AUG_DEFAULT_PARAMS["space_shuffle"],
+            # [
+                # "none",
+                # "gaussian_noise",
+                # "smooth_time_mask",
+                # "time_reverse",
+                # "sign_flip",
+                # "ft_surrogate",
+                # "frequency_shift",
+                # "bandstop_filter",
+                # "space_symmetry",
+                # "space_dropout",
+                # "space_shuffle"
+            # ]
         },
     }
 
