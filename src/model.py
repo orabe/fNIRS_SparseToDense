@@ -278,10 +278,10 @@ class CNN2DImage(nn.Module):
         self.classifier = nn.Sequential(
             nn.Flatten(start_dim=1),
             nn.Dropout(0.5),
-            nn.LazyLinear(64),
+            nn.LazyLinear(32),
             nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(64, 2)
+            nn.Linear(32, 2)
         )
 
     def forward(self, x):
