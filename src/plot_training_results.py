@@ -9,10 +9,10 @@ from sklearn.metrics import f1_score, roc_curve, auc
 
 CONFIG = {
     "results_root": "results",
-    "run_strategy": "online_eeg_aug",  # "base", "imageRecon_params", "channel_density", or "online_eeg_aug"
-    "dataset_name": "BallSqueezingHD_modified", # BS_Laura, BallSqueezingHD_modified, vfc_hd, Anderson_sparse
+    "run_strategy": "base",  # "base", "imageRecon_params", "channel_density", or "online_eeg_aug"
+    "dataset_name": "BS_Laura", # BS_Laura, BallSqueezingHD_modified, vfc_hd, Anderson_sparse
     "subset_name": "full",
-    "representation": "channel",  # "parcel" or "channel"
+    "representation": "parcel",  # "parcel" or "channel"
     "image_recon": {
         "sample_ratio": 1.0,
     },
@@ -20,8 +20,8 @@ CONFIG = {
         "aug_name": "none",
     },
     "channel_density": {
-        "source_dataset_name": "none",
-        "sample_ratio": 0.0,
+        "source_dataset_name": "vfc_hd",
+        "sample_ratio": 0.2,
     },
 }
 
@@ -84,6 +84,13 @@ def experiment_label():
     representation = CONFIG["representation"]
     if CONFIG["run_strategy"] in ["imageRecon_params", "channel_density"]:
         representation = "parcel"
+    if CONFIG["run_strategy"] == "channel_density":
+        sample_ratio = CONFIG["channel_density"]["sample_ratio"]
+        source_name = "none" if sample_ratio == 0 else CONFIG["channel_density"]["source_dataset_name"]
+        return (
+            f"target: {CONFIG['dataset_name']} | source: {source_name} | "
+            f"{representation} space | {CONFIG['run_strategy']} | ratio {sample_ratio:.1f}"
+        )
     return f"{CONFIG['dataset_name']} | {representation} space | {CONFIG['run_strategy']}"
 
 
@@ -428,6 +435,20 @@ def main():
             show=False,
         )
 
+    plot_final_mean_std_bar(
+        all_results,
+        "Accuracy",
+        "train_accuracy",
+        "test_accuracy",
+        os.path.join(output_dir, "accuracy_mean_std_bar.png"),
+    )
+    plot_final_mean_std_bar(
+        all_results,
+        "F1 Micro",
+        "train_f1_micro",
+        "test_f1_micro",
+        os.path.join(output_dir, "f1_micro_mean_std_bar.png"),
+    )
     plot_final_mean_std_bar(
         all_results,
         "F1 Macro",

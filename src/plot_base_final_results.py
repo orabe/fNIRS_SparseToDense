@@ -26,6 +26,11 @@ CONFIG = {
             "test_key": "test_f1_macro",
             "output_name": "f1_macro",
         },
+        "Accuracy": {
+            "train_key": "train_accuracy",
+            "test_key": "test_accuracy",
+            "output_name": "accuracy",
+        },
         "AUROC": {
             "train_key": "train_auroc",
             "test_key": "test_auroc",
@@ -142,9 +147,9 @@ def write_summary_csv(rows):
     return output_path
 
 
-def plot_summary(summary):
+def plot_summary(summary, metric_names, output_name, title):
     os.makedirs(CONFIG["output_dir"], exist_ok=True)
-    png_path = os.path.join(CONFIG["output_dir"], "base_final_channel_vs_parcel.png")
+    png_path = os.path.join(CONFIG["output_dir"], output_name)
 
     plt.rcParams.update(
         {
@@ -161,11 +166,10 @@ def plot_summary(summary):
     )
 
     dataset_names = CONFIG["datasets"]
-    metric_names = list(CONFIG["metrics"])
     fig, axes = plt.subplots(
         len(dataset_names),
         len(metric_names),
-        figsize=(7.2, 8.6),
+        figsize=(3.6 * len(metric_names), 8.6),
         squeeze=False,
         sharey="col",
     )
@@ -243,7 +247,7 @@ def plot_summary(summary):
         frameon=False,
         bbox_to_anchor=(0.54, 0.995),
     )
-    fig.suptitle("Base Experiment: Final Train/Test Performance", y=1.025, fontsize=12, fontweight="bold")
+    fig.suptitle(title, y=1.025, fontsize=12, fontweight="bold")
     fig.supxlabel("Input representation", y=0.025, fontsize=9)
     fig.tight_layout(rect=[0.08, 0.04, 1.0, 0.965], h_pad=1.0, w_pad=1.2)
     fig.savefig(png_path, dpi=600, bbox_inches="tight")
@@ -254,9 +258,28 @@ def plot_summary(summary):
 def main():
     summary, rows = build_summary()
     csv_path = write_summary_csv(rows)
-    png_path = plot_summary(summary)
+    combined_plot_path = plot_summary(
+        summary,
+        list(CONFIG["metrics"]),
+        "base_final_channel_vs_parcel.png",
+        "Base Experiment: Final Train/Test Performance",
+    )
+    f1_plot_path = plot_summary(
+        summary,
+        ["F1 Macro"],
+        "base_final_channel_vs_parcel_f1_macro_only.png",
+        "Base Experiment: Final Train/Test Performance (F1 Macro)",
+    )
+    accuracy_plot_path = plot_summary(
+        summary,
+        ["Accuracy"],
+        "base_final_channel_vs_parcel_accuracy_only.png",
+        "Base Experiment: Final Train/Test Performance (Accuracy)",
+    )
     print(f"Saved summary CSV to {csv_path}")
-    print(f"Saved PNG plot to {png_path}")
+    print(f"Saved combined PNG plot to {combined_plot_path}")
+    print(f"Saved F1-only PNG plot to {f1_plot_path}")
+    print(f"Saved accuracy-only PNG plot to {accuracy_plot_path}")
 
 
 if __name__ == "__main__":

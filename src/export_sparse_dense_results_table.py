@@ -12,11 +12,11 @@ from scipy.stats import ttest_rel
 
 CONFIG = {
     "results_root": "results",
-    "export_strategy": "online_eeg_aug",  # "base", "imageRecon_params", "channel_density", or "online_eeg_aug"
-    "dataset_name": "Anderson_sparse", # BS_Laura, BallSqueezingHD_modified, vfc_hd, Anderson_sparse
+    "export_strategy": "channel_density",  # "base", "imageRecon_params", "channel_density", or "online_eeg_aug"
+    "dataset_name": "BallSqueezingHD_modified", # BS_Laura, BallSqueezingHD_modified, vfc_hd, Anderson_sparse
     "chromo_mode": "both",
     "subset_name": "full",
-    "representation": "parcel",  # "parcel" or "channel"
+    "representation": "channel",  # "parcel" or "channel"
     "image_recon": {
         "ratios": [0.0, 0.1, 0.3, 0.5, 0.7, 1.0],
     },
@@ -36,8 +36,8 @@ CONFIG = {
         ],
     },
     "channel_density": {
-        "source_dataset_name": "none",
-        "ratios": [0.0, 0.1, 0.3, 0.5, 0.7, 1.0],
+        "source_dataset_name": "BS_Laura",
+        "ratios": [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
     },
 }
 
@@ -53,6 +53,11 @@ def configured_representation():
 
 
 def report_label():
+    if CONFIG["export_strategy"] == "channel_density":
+        return (
+            f"{CONFIG['dataset_name']} <- {CONFIG['channel_density']['source_dataset_name']} "
+            f"| {configured_representation()} space"
+        )
     return f"{CONFIG['dataset_name']} | {configured_representation()} space"
 
 
@@ -124,6 +129,8 @@ def analysis_dir_for(strategy):
             CONFIG["results_root"],
             "channel_density",
             f"target_{CONFIG['dataset_name']}",
+            f"source_{CONFIG['channel_density']['source_dataset_name']}",
+            "parcel_space",
             "analysis",
         )
     raise ValueError(f"Unknown strategy: {strategy}")
@@ -176,9 +183,11 @@ def write_csv(path, rows, headers):
 def _row_variant_label(row):
     if "Image-Recon Aug Ratio" in row:
         return row["Image-Recon Aug Ratio"], "image-recon augmentation ratio"
+    if "Source Sample Ratio" in row:
+        return row["Source Sample Ratio"], "source sample ratio"
     if "Augmentation" in row:
         return row["Augmentation"], "augmentation"
-    raise KeyError("Expected either 'Image-Recon Aug Ratio' or 'Augmentation' column.")
+    raise KeyError("Expected 'Image-Recon Aug Ratio', 'Source Sample Ratio', or 'Augmentation' column.")
 
 
 def write_subject_gain_heatmap(path, subject_rows, gain_column="Subject F1 Macro Gain", metric_label="F1 Macro"):
@@ -420,7 +429,7 @@ def write_best_aug_vs_baseline_bar_chart(
     ]
     means = [baseline_item[mean_key], best_item[mean_key]]
     stds = [baseline_item[std_key], best_item[std_key]]
-    improvement_pct = (best_item[mean_key] - baseline_item[mean_key]) * 100
+    improvement_pp = (best_item[mean_key] - baseline_item[mean_key]) * 100
 
     os.makedirs(os.path.dirname(path), exist_ok=True)
     fig, ax = plt.subplots(figsize=(4.6, 4.5))
@@ -461,7 +470,7 @@ def write_best_aug_vs_baseline_bar_chart(
     ax.text(
         x[1],
         max(mean_value + std_value for mean_value, std_value in zip(means, stds)) + 0.025,
-        f"{improvement_pct:+.1f}%",
+        f"{improvement_pp:+.1f} pp",
         ha="center",
         va="bottom",
         fontsize=10,
@@ -606,7 +615,7 @@ def build_img_recon_rows():
             ]
 
             paired_n = str(len(paired_subjects))
-            paired_gain = f"{mean(gains):+.3f} ({mean(gains) * 100:+.1f}%)" if gains else "n/a"
+            paired_gain = f"{mean(gains):+.3f} ({mean(gains) * 100:+.1f} pp)" if gains else "n/a"
             improved = str(sum(gain > 0 for gain in gains))
             worsened = str(sum(gain < 0 for gain in gains))
             unchanged = str(sum(gain == 0 for gain in gains))
@@ -627,7 +636,7 @@ def build_img_recon_rows():
                 for augmented, baseline in zip(augmented_auc_values, baseline_auc_values)
             ]
 
-            paired_auc_gain = f"{mean(auc_gains):+.3f} ({mean(auc_gains) * 100:+.1f}%)" if auc_gains else "n/a"
+            paired_auc_gain = f"{mean(auc_gains):+.3f} ({mean(auc_gains) * 100:+.1f} pp)" if auc_gains else "n/a"
             auc_improved = str(sum(gain > 0 for gain in auc_gains))
             auc_worsened = str(sum(gain < 0 for gain in auc_gains))
             auc_unchanged = str(sum(gain == 0 for gain in auc_gains))
@@ -658,11 +667,11 @@ def build_img_recon_rows():
                         "Subject": subject,
                         "Baseline F1 Macro": f"{baseline_value:.3f}",
                         "Augmented F1 Macro": f"{augmented_value:.3f}",
-                        "Subject F1 Macro Gain": f"{subject_gain:+.3f} ({subject_gain * 100:+.1f}%)",
+                        "Subject F1 Macro Gain": f"{subject_gain:+.3f} ({subject_gain * 100:+.1f} pp)",
                         "Baseline AUROC": f"{baseline_auc:.3f}" if baseline_auc is not None else "n/a",
                         "Augmented AUROC": f"{augmented_auc:.3f}" if augmented_auc is not None else "n/a",
                         "Subject AUROC Gain": (
-                            f"{subject_auc_gain:+.3f} ({subject_auc_gain * 100:+.1f}%)"
+                            f"{subject_auc_gain:+.3f} ({subject_auc_gain * 100:+.1f} pp)"
                             if subject_auc_gain is not None
                             else "n/a"
                         ),
@@ -740,42 +749,162 @@ def build_channel_density_rows():
     summary = []
     for ratio in CONFIG["channel_density"]["ratios"]:
         run_dir = channel_density_run_dir(ratio)
-        f1_values = collect_final_metric_values(run_dir, "test_f1_macro")
+        f1_by_subject = collect_final_metric_by_subject(run_dir, "test_f1_macro")
+        auc_by_subject = collect_final_metric_by_subject(run_dir, "test_auroc")
+        f1_values = list(f1_by_subject.values())
+        auc_values = list(auc_by_subject.values())
 
         if not f1_values:
             print(f"Skipping missing result folder or empty metrics: {run_dir}")
             continue
 
-        f1_mean, _, f1_text = format_mean_std(f1_values)
+        f1_mean, f1_std, f1_text = format_mean_std(f1_values)
+        auc_mean, auc_std, auc_text = format_mean_std(auc_values) if auc_values else (None, None, "n/a")
         summary.append(
             {
                 "ratio": ratio,
                 "f1_mean": f1_mean,
+                "f1_std": f1_std,
                 "f1_text": f1_text,
+                "f1_by_subject": f1_by_subject,
+                "auc_mean": auc_mean,
+                "auc_std": auc_std,
+                "auc_text": auc_text,
+                "auc_by_subject": auc_by_subject,
             }
         )
 
     if not summary:
-        raise RuntimeError("No result metrics found for any configured sparse/dense result folder.")
+        raise RuntimeError("No result metrics found for any configured channel-density result folder.")
 
-    baseline_f1 = summary[0]["f1_mean"]
+    baseline_items = [item for item in summary if item["ratio"] == 0.0]
+    baseline_item = baseline_items[0] if baseline_items else summary[0]
+    baseline_by_subject = baseline_item["f1_by_subject"]
+    baseline_auc_by_subject = baseline_item["auc_by_subject"]
 
     rows = []
-    for idx, item in enumerate(summary):
-        if idx == 0:
-            f1_gain = "reference"
+    subject_rows = []
+    performance_rows = []
+    for item in summary:
+        source_dataset = "none" if item["ratio"] == 0 else CONFIG["channel_density"]["source_dataset_name"]
+        ratio_label = format_ratio_label(item["ratio"])
+        for subject, f1_value in sorted(item["f1_by_subject"].items()):
+            auc_value = item["auc_by_subject"].get(subject)
+            performance_rows.append(
+                {
+                    "Dataset": CONFIG["dataset_name"],
+                    "Representation": "parcel",
+                    "Source Dataset": source_dataset,
+                    "Source Sample Ratio": ratio_label,
+                    "Subject": subject,
+                    "Test F1 Macro": f"{f1_value:.3f}",
+                    "Test AUROC": f"{auc_value:.3f}" if auc_value is not None else "n/a",
+                }
+            )
+
+        if item is baseline_item:
+            paired_n = "reference"
+            paired_gain = "reference"
+            paired_t = "reference"
+            paired_p = "reference"
+            paired_auc_gain = "reference"
+            paired_auc_t = "reference"
+            paired_auc_p = "reference"
+            improved = "reference"
+            worsened = "reference"
+            unchanged = "reference"
+            auc_improved = "reference"
+            auc_worsened = "reference"
+            auc_unchanged = "reference"
         else:
-            gain = item["f1_mean"] - baseline_f1
-            f1_gain = f"{gain:+.3f} ({gain * 100:+.1f}%)"
+            paired_subjects = sorted(set(baseline_by_subject) & set(item["f1_by_subject"]))
+            baseline_values = [baseline_by_subject[subject] for subject in paired_subjects]
+            augmented_values = [item["f1_by_subject"][subject] for subject in paired_subjects]
+            gains = [augmented - baseline for augmented, baseline in zip(augmented_values, baseline_values)]
+
+            paired_n = str(len(paired_subjects))
+            paired_gain = f"{mean(gains):+.3f} ({mean(gains) * 100:+.1f} pp)" if gains else "n/a"
+            improved = str(sum(gain > 0 for gain in gains))
+            worsened = str(sum(gain < 0 for gain in gains))
+            unchanged = str(sum(gain == 0 for gain in gains))
+
+            if len(gains) >= 2:
+                t_stat, p_value = ttest_rel(augmented_values, baseline_values)
+                paired_t = f"{t_stat:.3f}"
+                paired_p = f"{p_value:.4f}"
+            else:
+                paired_t = "n/a"
+                paired_p = "n/a"
+
+            paired_auc_subjects = sorted(set(baseline_auc_by_subject) & set(item["auc_by_subject"]))
+            baseline_auc_values = [baseline_auc_by_subject[subject] for subject in paired_auc_subjects]
+            augmented_auc_values = [item["auc_by_subject"][subject] for subject in paired_auc_subjects]
+            auc_gains = [augmented - baseline for augmented, baseline in zip(augmented_auc_values, baseline_auc_values)]
+
+            paired_auc_gain = f"{mean(auc_gains):+.3f} ({mean(auc_gains) * 100:+.1f} pp)" if auc_gains else "n/a"
+            auc_improved = str(sum(gain > 0 for gain in auc_gains))
+            auc_worsened = str(sum(gain < 0 for gain in auc_gains))
+            auc_unchanged = str(sum(gain == 0 for gain in auc_gains))
+
+            if len(auc_gains) >= 2:
+                auc_t_stat, auc_p_value = ttest_rel(augmented_auc_values, baseline_auc_values)
+                paired_auc_t = f"{auc_t_stat:.3f}"
+                paired_auc_p = f"{auc_p_value:.4f}"
+            else:
+                paired_auc_t = "n/a"
+                paired_auc_p = "n/a"
+
+            for subject, baseline_value, augmented_value, subject_gain in zip(
+                paired_subjects, baseline_values, augmented_values, gains
+            ):
+                baseline_auc = baseline_auc_by_subject.get(subject)
+                augmented_auc = item["auc_by_subject"].get(subject)
+                subject_auc_gain = (
+                    augmented_auc - baseline_auc
+                    if baseline_auc is not None and augmented_auc is not None
+                    else None
+                )
+                subject_rows.append(
+                    {
+                        "Dataset": CONFIG["dataset_name"],
+                        "Representation": "parcel",
+                        "Source Dataset": source_dataset,
+                        "Source Sample Ratio": ratio_label,
+                        "Subject": subject,
+                        "Baseline F1 Macro": f"{baseline_value:.3f}",
+                        "Augmented F1 Macro": f"{augmented_value:.3f}",
+                        "Subject F1 Macro Gain": f"{subject_gain:+.3f} ({subject_gain * 100:+.1f} pp)",
+                        "Baseline AUROC": f"{baseline_auc:.3f}" if baseline_auc is not None else "n/a",
+                        "Augmented AUROC": f"{augmented_auc:.3f}" if augmented_auc is not None else "n/a",
+                        "Subject AUROC Gain": (
+                            f"{subject_auc_gain:+.3f} ({subject_auc_gain * 100:+.1f} pp)"
+                            if subject_auc_gain is not None
+                            else "n/a"
+                        ),
+                    }
+                )
 
         rows.append(
             {
                 "Dataset": CONFIG["dataset_name"],
                 "Representation": "parcel",
-                "Source Dataset": "none" if item["ratio"] == 0 else CONFIG["channel_density"]["source_dataset_name"],
-                "Source Sample Ratio": format_ratio_label(item["ratio"]),
+                "Source Dataset": source_dataset,
+                "Source Sample Ratio": ratio_label,
                 "Test F1 Macro (mean ± std)": item["f1_text"],
-                "Absolute F1 Macro Gain vs. 0%": f1_gain,
+                "Test AUROC (mean ± std)": item["auc_text"],
+                "Paired Subjects": paired_n,
+                "Mean Paired F1 Macro Gain Across Subjects": paired_gain,
+                "Mean Paired AUROC Gain Across Subjects": paired_auc_gain,
+                "Subjects Improved (F1 Macro)": improved,
+                "Subjects Worsened (F1 Macro)": worsened,
+                "Subjects Unchanged (F1 Macro)": unchanged,
+                "Subjects Improved (AUROC)": auc_improved,
+                "Subjects Worsened (AUROC)": auc_worsened,
+                "Subjects Unchanged (AUROC)": auc_unchanged,
+                "Paired F1 Macro t-statistic": paired_t,
+                "Paired F1 Macro t-test p-value": paired_p,
+                "Paired AUROC t-statistic": paired_auc_t,
+                "Paired AUROC t-test p-value": paired_auc_p,
             }
         )
 
@@ -785,10 +914,44 @@ def build_channel_density_rows():
         "Source Dataset",
         "Source Sample Ratio",
         "Test F1 Macro (mean ± std)",
-        "Absolute F1 Macro Gain vs. 0%",
+        "Test AUROC (mean ± std)",
+        "Paired Subjects",
+        "Mean Paired F1 Macro Gain Across Subjects",
+        "Mean Paired AUROC Gain Across Subjects",
+        "Subjects Improved (F1 Macro)",
+        "Subjects Worsened (F1 Macro)",
+        "Subjects Unchanged (F1 Macro)",
+        "Subjects Improved (AUROC)",
+        "Subjects Worsened (AUROC)",
+        "Subjects Unchanged (AUROC)",
+        "Paired F1 Macro t-statistic",
+        "Paired F1 Macro t-test p-value",
+        "Paired AUROC t-statistic",
+        "Paired AUROC t-test p-value",
     ]
-    return rows, headers, os.path.join(analysis_dir_for("channel_density"), "summary_table")
-
+    subject_headers = [
+        "Dataset",
+        "Representation",
+        "Source Dataset",
+        "Source Sample Ratio",
+        "Subject",
+        "Baseline F1 Macro",
+        "Augmented F1 Macro",
+        "Subject F1 Macro Gain",
+        "Baseline AUROC",
+        "Augmented AUROC",
+        "Subject AUROC Gain",
+    ]
+    return (
+        rows,
+        headers,
+        os.path.join(analysis_dir_for("channel_density"), "summary_table"),
+        subject_rows,
+        subject_headers,
+        os.path.join(analysis_dir_for("channel_density"), "subjectwise_gains"),
+        performance_rows,
+        summary,
+    )
 
 def build_online_eeg_aug_rows():
     summary = []
@@ -858,7 +1021,7 @@ def build_online_eeg_aug_rows():
             gains = [augmented - baseline for augmented, baseline in zip(augmented_values, baseline_values)]
 
             paired_n = str(len(paired_subjects))
-            paired_gain = f"{mean(gains):+.3f} ({mean(gains) * 100:+.1f}%)" if gains else "n/a"
+            paired_gain = f"{mean(gains):+.3f} ({mean(gains) * 100:+.1f} pp)" if gains else "n/a"
             if len(gains) >= 2:
                 t_stat, p_value = ttest_rel(augmented_values, baseline_values)
                 paired_t = f"{t_stat:.3f}"
@@ -871,7 +1034,7 @@ def build_online_eeg_aug_rows():
             baseline_auc_values = [baseline_auc_by_subject[subject] for subject in paired_auc_subjects]
             augmented_auc_values = [item["auc_by_subject"][subject] for subject in paired_auc_subjects]
             auc_gains = [augmented - baseline for augmented, baseline in zip(augmented_auc_values, baseline_auc_values)]
-            paired_auc_gain = f"{mean(auc_gains):+.3f} ({mean(auc_gains) * 100:+.1f}%)" if auc_gains else "n/a"
+            paired_auc_gain = f"{mean(auc_gains):+.3f} ({mean(auc_gains) * 100:+.1f} pp)" if auc_gains else "n/a"
             if len(auc_gains) >= 2:
                 auc_t_stat, auc_p_value = ttest_rel(augmented_auc_values, baseline_auc_values)
                 paired_auc_t = f"{auc_t_stat:.3f}"
@@ -898,11 +1061,11 @@ def build_online_eeg_aug_rows():
                         "Subject": subject,
                         "Baseline F1 Macro": f"{baseline_value:.3f}",
                         "Augmented F1 Macro": f"{augmented_value:.3f}",
-                        "Subject F1 Macro Gain": f"{subject_gain:+.3f} ({subject_gain * 100:+.1f}%)",
+                        "Subject F1 Macro Gain": f"{subject_gain:+.3f} ({subject_gain * 100:+.1f} pp)",
                         "Baseline AUROC": f"{baseline_auc:.3f}" if baseline_auc is not None else "n/a",
                         "Augmented AUROC": f"{augmented_auc:.3f}" if augmented_auc is not None else "n/a",
                         "Subject AUROC Gain": (
-                            f"{subject_auc_gain:+.3f} ({subject_auc_gain * 100:+.1f}%)"
+                            f"{subject_auc_gain:+.3f} ({subject_auc_gain * 100:+.1f} pp)"
                             if subject_auc_gain is not None
                             else "n/a"
                         ),
@@ -990,12 +1153,16 @@ def main():
         ) = build_img_recon_rows()
         analysis_dir = analysis_dir_for("imageRecon_params")
     elif CONFIG["export_strategy"] == "channel_density":
-        rows, headers, output_prefix = build_channel_density_rows()
-        subject_rows = []
-        subject_headers = []
-        subject_output_prefix = None
-        performance_rows = []
-        img_recon_summary = []
+        (
+            rows,
+            headers,
+            output_prefix,
+            subject_rows,
+            subject_headers,
+            subject_output_prefix,
+            performance_rows,
+            img_recon_summary,
+        ) = build_channel_density_rows()
         analysis_dir = analysis_dir_for("channel_density")
     elif CONFIG["export_strategy"] == "online_eeg_aug":
         (

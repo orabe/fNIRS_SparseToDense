@@ -38,6 +38,10 @@ CONFIG = {
             "key": "test_f1_macro",
             "output_name": "f1_macro",
         },
+        "Accuracy": {
+            "key": "test_accuracy",
+            "output_name": "accuracy",
+        },
         "AUROC": {
             "key": "test_auroc",
             "output_name": "auroc",
@@ -71,6 +75,14 @@ REPRESENTATION_LABELS = {
     "channel": "Channel",
     "parcel": "Parcel",
 }
+
+
+def gain_color(value):
+    if value > 0:
+        return "#2CA02C"
+    if value < 0:
+        return "#D62728"
+    return "black"
 
 
 def run_dir(dataset_name, representation, augmentation):
@@ -193,8 +205,14 @@ def plot_best_methods(summary, metric_names, output_name, title):
     )
 
     group_centers = np.arange(len(metric_names))
-    bar_width = 0.34 if len(metric_names) > 1 else 0.10
-    split_offsets = {"none": -bar_width / 2, "best": bar_width / 2}
+    if len(metric_names) > 1:
+        bar_width = 0.34
+        split_offsets = {"none": -bar_width / 2, "best": bar_width / 2}
+        x_limits = None
+    else:
+        bar_width = 0.13
+        split_offsets = {"none": -bar_width / 2, "best": bar_width / 2}
+        x_limits = (-0.35, 0.35)
     bar_colors = {"none": "#9E9E9E", "best": "#4C78A8"}
 
     for row_idx, representation in enumerate(representations):
@@ -288,7 +306,7 @@ def plot_best_methods(summary, metric_names, output_name, title):
                         ha="center",
                         va="bottom",
                         fontsize=7,
-                        color="#D62728" if improvement >= 0 else "#555555",
+                        color=gain_color(improvement),
                         fontweight="bold",
                     )
 
@@ -309,6 +327,8 @@ def plot_best_methods(summary, metric_names, output_name, title):
             if col_idx == 0:
                 ax.set_ylabel(f"{REPRESENTATION_LABELS[representation]}\nScore")
             ax.set_ylim(0, 1.05)
+            if x_limits is not None:
+                ax.set_xlim(*x_limits)
             ax.set_xticks(group_centers)
             ax.set_xticklabels(metric_names)
             ax.grid(True, axis="y", linestyle="-", linewidth=0.4, alpha=0.25)
@@ -355,9 +375,16 @@ def main():
         "online_eeg_aug_best_methods_f1_macro_only.png",
         "Online EEG-Inspired Augmentations: None vs Best Method (F1 Macro)",
     )
+    accuracy_plot_path = plot_best_methods(
+        summary,
+        ["Accuracy"],
+        "online_eeg_aug_best_methods_accuracy_only.png",
+        "Online EEG-Inspired Augmentations: None vs Best Method (Accuracy)",
+    )
     print(f"Saved summary CSV to {csv_path}")
     print(f"Saved combined best-method plot to {combined_plot_path}")
     print(f"Saved F1-only best-method plot to {f1_plot_path}")
+    print(f"Saved accuracy-only best-method plot to {accuracy_plot_path}")
 
 
 if __name__ == "__main__":
