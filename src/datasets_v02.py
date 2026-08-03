@@ -233,6 +233,7 @@ class fNIRSPreloadDataset(Dataset):
         chromo="HbO",
         aug_name="none",
         aug_params=None,
+        input_normalization="none",
         seed=42,
     ):
         self.data_csv = (
@@ -244,7 +245,14 @@ class fNIRSPreloadDataset(Dataset):
         self.chromo = chromo
         self.aug_name = aug_name
         self.aug_params = aug_params
+        self.input_normalization = input_normalization
         self.rng = np.random.default_rng(seed)
+
+        if input_normalization not in {"none", "per_window"}:
+            raise ValueError(
+                f"Unknown input_normalization: {input_normalization}. "
+                "Choose 'none' or 'per_window'."
+            )
 
         # === Pre-load all trials into RAM ===
         self.all_trials = []
@@ -260,6 +268,13 @@ class fNIRSPreloadDataset(Dataset):
             else:
                 record = xr.open_dataarray(row["snirf_file"]).sel(chromo=chromo)
                 trial_tensor = torch.tensor(record.values, dtype=torch.float32).unsqueeze(1)
+            if input_normalization == "per_window":
+                scale = trial_tensor.std(
+                    dim=(0, 2),
+                    keepdim=True,
+                    unbiased=False,
+                ).clamp_min(1e-6)
+                trial_tensor = trial_tensor / scale
             if expected_shape is None:
                 expected_shape = tuple(trial_tensor.shape)
             elif tuple(trial_tensor.shape) != expected_shape:

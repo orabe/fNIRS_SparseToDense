@@ -9,6 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import f1_score, roc_auc_score, roc_curve, precision_recall_curve, average_precision_score, precision_score, recall_score, confusion_matrix
 import logging
+import random
 import sys
 import warnings
 
@@ -64,27 +65,42 @@ DATASET_SUBJECTS = {
     ],
 }
 
-CHANNEL_DENSITY_SUBSET_FOLDERS = {
-    "BS_Laura": [
-        "subset_90_chs",
-        "subset_80_chs",
-        "subset_70_chs",
-        "subset_60_chs",
-        "subset_50_chs",
-    ],
+DATASET_EXCLUDED_SUBJECTS = {
     "BallSqueezingHD_modified": [
-        "subset_90_chs",
-        "subset_80_chs",
-        "subset_70_chs",
-        "subset_60_chs",
-        "subset_50_chs",
+        "sub-171", "sub-184",
+    ],
+    "BS_Laura": [
+        # "sub-568", "sub-577", "sub-580", "sub-581", "sub-583", # 60%
+        "sub-568", "sub-581", # 40%
     ],
     "vfc_hd": [
-        "subset_90_chs",
-        "subset_80_chs",
-        "subset_70_chs",
-        "subset_60_chs",
-        "subset_50_chs",
+        "sub-06", "sub-11", "sub-12", "sub-13",
+        "sub-17", "sub-20", "sub-26",
+    ],
+    "Anderson_sparse": [],
+}
+
+CHANNEL_DENSITY_SUBSET_FOLDERS = {
+    "BS_Laura": [
+        "51_chs",
+        # "61_chs",
+        # "71_chs",
+        # "81_chs",
+        # "92_chs",
+    ],
+    "BallSqueezingHD_modified": [
+        # "43_chs",
+        "55_chs",
+        # "68_chs",
+        # "79_chs",
+        # "91_chs",
+    ],
+    "vfc_hd": [
+        "50_chs",
+        "60_chs",
+        "70_chs",
+        "80_chs",
+        "90_chs",
     ],
     "Anderson_sparse": ["full"],
 }
@@ -331,6 +347,43 @@ def sample_sparse_by_subject(df, fraction, seed=42):
     sampled_df = pd.concat(sampled, ignore_index=True)
     return sampled_df.drop(columns=["subject_id"])
 
+def compute_train_fold_normalization(train_datasets):
+    """Compute per-spatial-unit and chromophore statistics from training data."""
+    trial_shape = tuple(train_datasets[0].all_trials[0].shape)
+    signal_sum = torch.zeros(trial_shape[:2], dtype=torch.float64)
+    signal_square_sum = torch.zeros(trial_shape[:2], dtype=torch.float64)
+    value_count = 0
+
+    for dataset in train_datasets:
+        for trial in dataset.all_trials:
+            if tuple(trial.shape) != trial_shape:
+                raise ValueError(
+                    f"All training trials must have the same shape; "
+                    f"got {tuple(trial.shape)} and {trial_shape}"
+                )
+            trial_double = trial.to(torch.float64)
+            signal_sum += trial_double.sum(dim=-1)
+            signal_square_sum += trial_double.square().sum(dim=-1)
+            value_count += trial.shape[-1]
+
+    mean = signal_sum / value_count
+    variance = (signal_square_sum / value_count) - mean.square()
+    std = variance.clamp_min(0).sqrt()
+    std = torch.where(
+        std > torch.finfo(torch.float64).eps,
+        std,
+        torch.ones_like(std),
+    )
+    return mean.to(torch.float32).unsqueeze(-1), std.to(torch.float32).unsqueeze(-1)
+
+def apply_train_fold_normalization(datasets, mean, std):
+    """Apply training-fold statistics to preloaded train or evaluation datasets."""
+    for dataset in datasets:
+        dataset.all_trials = [
+            (trial - mean) / std
+            for trial in dataset.all_trials
+        ]
+
 def get_subjects(subjects_by_dataset, dataset_name):
     if dataset_name not in subjects_by_dataset:
         supported = ", ".join(sorted(subjects_by_dataset))
@@ -340,10 +393,11 @@ def get_subjects(subjects_by_dataset, dataset_name):
         )
     return subjects_by_dataset[dataset_name]
 
-def make_dataset_config(root, subjects, dataset_name, sample_ratio, exclude_subjects):
+def make_dataset_config(root, subjects, dataset_name, sample_ratio):
+    exclude_subjects = DATASET_EXCLUDED_SUBJECTS[dataset_name]
     return {
         "root": root,
-        "subjects": subjects,
+        "subjects": [subject for subject in subjects if subject not in exclude_subjects],
         "dataset_name": dataset_name,
         "sample_ratio": sample_ratio,
         "exclude_subjects": exclude_subjects,
@@ -357,7 +411,7 @@ def build_online_eeg_aug_strategy(target_dataset_name, strategy_config, subjects
     online_aug_params = strategy_config["online_aug_params"]
     target_subjects = get_subjects(subjects_by_dataset, target_dataset_name)
     root = f"{PROCESSED_ROOT}/base/{target_dataset_name}/{subset_name}/{representation}_space"
-    dataset_config = make_dataset_config(root, target_subjects, target_dataset_name, 1.0, [])
+    dataset_config = make_dataset_config(root, target_subjects, target_dataset_name, 1.0)
     results_dir = os.path.join(
         RESULTS_ROOT,
         "online_eeg_aug",
@@ -380,7 +434,7 @@ def build_base_strategy(target_dataset_name, strategy_config, subjects_by_datase
     representation = strategy_config["representation"]
     target_subjects = get_subjects(subjects_by_dataset, target_dataset_name)
     root = f"{PROCESSED_ROOT}/base/{target_dataset_name}/{subset_name}/{representation}_space"
-    dataset_config = make_dataset_config(root, target_subjects, target_dataset_name, 1.0, [])
+    dataset_config = make_dataset_config(root, target_subjects, target_dataset_name, 1.0)
     results_dir = os.path.join(
         RESULTS_ROOT,
         "base",
@@ -417,7 +471,6 @@ def build_image_recon_strategy(target_dataset_name, strategy_config, subjects_by
             target_subjects,
             target_dataset_name,
             recon_param_sample_ratios[folder],
-            [],
         )
         for folder in recon_param_folders
     }
@@ -427,7 +480,6 @@ def build_image_recon_strategy(target_dataset_name, strategy_config, subjects_by
             target_subjects,
             target_dataset_name,
             1.0,
-            [],
         )
     }
     results_dir = os.path.join(
@@ -459,7 +511,6 @@ def build_channel_density_strategy(
             target_subjects,
             target_dataset_name,
             1.0,
-            [],
         )
     }
     source_result_name = source_dataset_name
@@ -472,7 +523,6 @@ def build_channel_density_strategy(
                 source_subjects,
                 source_dataset_name,
                 sparse_sample_ratio,
-                [],
             )
     eval_datasets_config = {
         f"target_{target_dataset_name}_full": make_dataset_config(
@@ -480,7 +530,6 @@ def build_channel_density_strategy(
             target_subjects,
             target_dataset_name,
             1.0,
-            [],
         )
     }
     results_dir = os.path.join(
@@ -498,11 +547,25 @@ def run_mixed_training(run_strategy, config, train_params):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     num_epochs = train_params["num_epochs"]
     learning_rate = train_params["learning_rate"]
+    weight_decay = train_params["weight_decay"]
     batch_size = train_params["batch_size"]
     random_state = train_params["random_state"]
     chromo = train_params["chromo"]
     use_class_weights = train_params["use_class_weights"]
+    input_normalization = train_params["input_normalization"]
     target_dataset_name = config["target_dataset_name"]
+
+    if input_normalization not in {"none", "per_window", "train_fold"}:
+        raise ValueError(
+            f"Unknown input_normalization: {input_normalization}. "
+            "Choose 'none', 'per_window', or 'train_fold'."
+        )
+    dataset_input_normalization = (
+        "none" if input_normalization == "train_fold" else input_normalization
+    )
+
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
     if run_strategy == "online_eeg_aug":
         (
             train_datasets_config,
@@ -574,19 +637,27 @@ def run_mixed_training(run_strategy, config, train_params):
 
     logging.info(f"Run strategy: {run_strategy}")
     logging.info(f"Target dataset: {target_dataset_name}")
+    logging.info(f"Input normalization: {input_normalization}")
     logging.info(f"Results directory: {results_dir}")
 
     for fold_idx, fold in enumerate(folds):
         subs = "_".join(fold)
+        fold_seed = random_state + fold_idx
+        random.seed(fold_seed)
+        np.random.seed(fold_seed)
+        torch.manual_seed(fold_seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(fold_seed)
+        data_loader_generator = torch.Generator()
+        data_loader_generator.manual_seed(fold_seed)
+        logging.info(f"Random seed for fold {subs}: {fold_seed}")
 
         train_datasets = []
         for name, cfg in train_datasets_config.items():
             ratio = cfg["sample_ratio"]
             if ratio <= 0:
                 continue
-            # Exclude the held-out LOSO subject from every training root.
-            # This prevents leakage across augmentation views of the same subject.
-            test_subjects_list = fold
+            test_subjects_list = fold if cfg["dataset_name"] == target_dataset_name else []
             logging.info(
                 f"Excluded test subjects for training ({name}): {', '.join(test_subjects_list)}"
             )
@@ -612,6 +683,7 @@ def run_mixed_training(run_strategy, config, train_params):
                     chromo=chromo,
                     aug_name=train_aug_name,
                     aug_params=train_aug_params,
+                    input_normalization=dataset_input_normalization,
                     seed=random_state + fold_idx,
                 )
             )
@@ -642,8 +714,21 @@ def run_mixed_training(run_strategy, config, train_params):
                     chromo=chromo,
                     aug_name="none",
                     aug_params=None,
+                    input_normalization=dataset_input_normalization,
                     seed=random_state + fold_idx,
                 )
+            )
+
+        normalization_mean = None
+        normalization_std = None
+        if input_normalization == "train_fold":
+            normalization_mean, normalization_std = compute_train_fold_normalization(
+                train_datasets
+            )
+            apply_train_fold_normalization(
+                train_datasets + eval_datasets,
+                normalization_mean,
+                normalization_std,
             )
 
         test_dataset = eval_datasets[0] if len(eval_datasets) == 1 else ConcatDataset(eval_datasets)
@@ -653,7 +738,14 @@ def run_mixed_training(run_strategy, config, train_params):
             raise ValueError(f"All train/eval datasets must have the same tensor shape; got {dataset_shapes}")
         input_channels = dataset_shapes[0][0]
 
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=True)
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=0,
+            pin_memory=True,
+            generator=data_loader_generator,
+        )
         test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=0, pin_memory=True)
 
         # Calculate class weights for imbalanced data (optional)
@@ -668,8 +760,9 @@ def run_mixed_training(run_strategy, config, train_params):
             criterion = nn.CrossEntropyLoss(weight=class_weights)
         else:
             criterion = nn.CrossEntropyLoss()
-        optimizer = optim.AdamW(model.parameters(), lr=learning_rate)
+        optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
         
+        learning_rates = []
         train_losses = []
         train_accuracies = []
         test_losses = []
@@ -688,6 +781,7 @@ def run_mixed_training(run_strategy, config, train_params):
         # Training loop
         for epoch in range(num_epochs):
 
+            learning_rates.append(optimizer.param_groups[0]["lr"])
             train_loss = train_model(model, train_loader, criterion, optimizer, device)
             train_metrics = evaluate_model(model, train_loader, criterion, device)
             test_metrics = evaluate_model(model, test_loader, criterion, device)
@@ -711,6 +805,7 @@ def run_mixed_training(run_strategy, config, train_params):
             train_recalls.append(train_metrics['recall'])
 
             logging.info(f"Sub: {subs}, Epoch [{epoch+1}], "
+                        f"LR: {learning_rates[-1]:.2e}, "
                         f"Train F1: {train_metrics['f1_micro']:.4f}, Test F1: {test_metrics['f1_micro']:.4f}, "
                         f"Train AUROC: {train_metrics['auroc']:.4f}, Test AUROC: {test_metrics['auroc']:.4f}")
        
@@ -736,6 +831,7 @@ def run_mixed_training(run_strategy, config, train_params):
                               os.path.join(plots_dir, f"confusion_matrix_{subs}_{chromo}.png"))
         
         res = {
+            "learning_rates": learning_rates,
             "train_loss": train_losses, "train_accuracy": train_accuracies,
             "test_loss": test_losses, "test_accuracy": test_accuracies,
             "test_f1_micro": test_f1_micros, "test_f1_macro": test_f1_macros,
@@ -743,6 +839,14 @@ def run_mixed_training(run_strategy, config, train_params):
             "test_auroc": test_aurocs, "train_auroc": train_aurocs,
             "test_precision": test_precisions, "test_recall": test_recalls,
             "train_precision": train_precisions, "train_recall": train_recalls,
+            "random_state": random_state, "fold_seed": fold_seed,
+            "input_normalization": input_normalization,
+            "normalization_mean": (
+                normalization_mean.numpy() if normalization_mean is not None else None
+            ),
+            "normalization_std": (
+                normalization_std.numpy() if normalization_std is not None else None
+            ),
             "final_test_labels": final_test_metrics['all_labels'],
             "final_test_preds": final_test_metrics['all_preds'],
             "final_test_probs": final_test_metrics['all_probs']
@@ -765,26 +869,30 @@ def run_mixed_training(run_strategy, config, train_params):
 
 def main():
     train_params = {
-        "num_epochs": 500,
+        "num_epochs": 200,
         "learning_rate": 1e-4,
+        "weight_decay": 3e-3,
         "batch_size": 16,
         "random_state": 42,
         "chromo": "both",
         "use_class_weights": False,
+        
+        # Set to none for BallSqueezingHD_modified channel_space, otherwise to train_fold
+        "input_normalization": "train_fold" # "train_fold", # "none", "per_window", or "train_fold"
     }
 
-    run_strategy = "online_eeg_aug"  # "base", "channel_density", "imageRecon_params", or "online_eeg_aug"
+    run_strategy = "base"  # "base", "channel_density", "imageRecon_params", or "online_eeg_aug"
     config = {
         
-        "target_dataset_name": "Anderson_sparse", # "BS_Laura", "BallSqueezingHD_modified", "vfc_hd", or "Anderson_sparse"
+        "target_dataset_name": "BS_Laura", # "BS_Laura", "BallSqueezingHD_modified", "vfc_hd", or "Anderson_sparse"
         
         "base": {
             "subset_name": "full",
             "representation": "channel", # "parcel" or "channel"
         },
         "channel_density": {
-            "source_dataset_name": "BS_Laura",
-            "sparse_sample_ratio": 1.0,
+            "source_dataset_name": "BallSqueezingHD_modified",
+            "sparse_sample_ratio": 0.8, # e.g. choose from [0.2, 0.4, 0.6, 0.8, 1.0]
             "subset_folders": CHANNEL_DENSITY_SUBSET_FOLDERS,
         },
         "imageRecon_params": {
